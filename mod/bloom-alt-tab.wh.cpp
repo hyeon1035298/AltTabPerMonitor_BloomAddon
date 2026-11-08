@@ -68,7 +68,7 @@
     - light: 라이트
   - glass: true
     $name: 유리 효과
-    $description: 끄면 아이콘 전환기가 블러 없이 테마 색으로 칠해집니다. Bloom 애드온으로 쓰면 Bloom의 유리 효과를 따릅니다
+    $description: 켜면 아이콘 전환기 판 뒤가 살짝 비치고, 끄면 테마 색으로 꽉 칠해집니다. Bloom 애드온으로 쓰면 Bloom의 유리 효과를 따릅니다
   $name: 모양
 */
 // ==/WindhawkModSettings==
@@ -82,8 +82,9 @@
 // Alt+Shift+Tab and Win+Alt+Tab (Ctrl+Alt+Tab stays Windows') and hands every key to a
 // second thread that lists the windows, draws them and switches. While an elevated window
 // is in front the hook gets no keys, and Windows' switcher comes as before. The look is
-// Bloom's: its colors and the accent picked in Bloom, the DWM acrylic Bloom's windows use,
-// rounded corners, Segoe UI. It holds memory only while it is open (see Switcher).
+// Bloom's: its colors and the accent picked in Bloom, a panel with Bloom's G2 corners
+// drawn on a see-through window, Segoe UI. It holds memory only while it is open (see
+// Switcher).
 
 #include <appmodel.h>
 #include <d2d1_1.h>
@@ -357,8 +358,9 @@ AccentPair CurrentAccent() {
     }
     return accent;
 }
-// Over the acrylic the window color shows at 70 % (Bloom's 유리 투명도 default of 30 %).
-constexpr uint32_t kGlassAlpha = 0xB3;
+// With glass on the panel lets 10 % of what is behind through; no blur can follow its G2
+// corners, so more would cost the icons and titles their contrast.
+constexpr uint32_t kGlassAlpha = 0xE6;
 
 D2D1_COLOR_F Color(uint32_t argb) {
     return {((argb >> 16) & 0xFF) / 255.f, ((argb >> 8) & 0xFF) / 255.f, (argb & 0xFF) / 255.f,
@@ -918,28 +920,26 @@ void Switcher::PlaceCells() {
     }
 }
 
+// A see-through window: no backdrop, corners or border of DWM's, the frame spread over the
+// whole window so that its pixels' alpha counts. The panel is drawn on it (Draw), so its
+// corners can be Bloom's G2 curve, which DWM's rounding and acrylic cannot follow.
 void Switcher::ApplyBackdrop() {
     BOOL noAnimation = TRUE;
     DwmSetWindowAttribute(hwnd_, DWMWA_TRANSITIONS_FORCEDISABLED, &noAnimation,
                           sizeof(noAnimation));
-    DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUND;
-    DwmSetWindowAttribute(hwnd_, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
-    BOOL dark = look_.dark;
-    DwmSetWindowAttribute(hwnd_, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
-    COLORREF border = look_.border;
-    DwmSetWindowAttribute(hwnd_, DWMWA_BORDER_COLOR, &border, sizeof(border));
-    // Acrylic as Bloom's windows have it, where Windows' transparency effects are on.
+    DWM_WINDOW_CORNER_PREFERENCE square = DWMWCP_DONOTROUND;
+    DwmSetWindowAttribute(hwnd_, DWMWA_WINDOW_CORNER_PREFERENCE, &square, sizeof(square));
+    COLORREF none = DWMWA_COLOR_NONE;
+    DwmSetWindowAttribute(hwnd_, DWMWA_BORDER_COLOR, &none, sizeof(none));
+    DWM_SYSTEMBACKDROP_TYPE backdrop = DWMSBT_NONE;
+    DwmSetWindowAttribute(hwnd_, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof(backdrop));
+    MARGINS all{-1, -1, -1, -1};
+    DwmExtendFrameIntoClientArea(hwnd_, &all);
+    // Glass, where Windows' transparency effects are on too: the panel lets a little through.
     glass_ = options_.glass && PersonalizeValue(L"EnableTransparency", 1) != 0;
-    DWM_SYSTEMBACKDROP_TYPE backdrop = glass_ ? DWMSBT_TRANSIENTWINDOW : DWMSBT_NONE;
-    if (FAILED(DwmSetWindowAttribute(hwnd_, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop,
-                                     sizeof(backdrop)))) {
-        glass_ = false;  // before Windows 11 22H2
-    }
-    MARGINS margins = glass_ ? MARGINS{-1, -1, -1, -1} : MARGINS{};
-    DwmExtendFrameIntoClientArea(hwnd_, &margins);
 }
 
-// Draws through a buffered paint, which keeps the alpha the acrylic shows through.
+// Draws through a buffered paint, which keeps the alpha the see-through window needs.
 void Switcher::Paint() {
     PAINTSTRUCT ps;
     HDC hdc = BeginPaint(hwnd_, &ps);
@@ -956,12 +956,22 @@ void Switcher::Paint() {
 
 void Switcher::Draw() {
     target_->BeginDraw();
-    uint32_t ground = glass_ ? (look_.solid & 0x00FFFFFF) | (kGlassAlpha << 24) : look_.solid;
-    target_->Clear(Color(ground));
+    target_->Clear(Color(0));
     target_->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
 
     com_ptr<ID2D1SolidColorBrush> brush;
     target_->CreateSolidColorBrush(Color(look_.text), brush.put());
+    // The panel: G2 corners concentric with the cells' (their radius plus the padding),
+    // Bloom's window color and its hairline.
+    if (auto panel = Squircle(d2d_.get(), {0.5f, 0.5f, width_ - 0.5f, height_ - 0.5f},
+                              kRadius + kPanelPad)) {
+        uint32_t alpha = glass_ ? kGlassAlpha : 0xFF;
+        brush->SetColor(Color((look_.solid & 0x00FFFFFF) | (alpha << 24)));
+        target_->FillGeometry(panel.get(), brush.get());
+        COLORREF c = look_.border;
+        brush->SetColor(Color(0xFF000000u | GetRValue(c) << 16 | GetGValue(c) << 8 | GetBValue(c)));
+        target_->DrawGeometry(panel.get(), brush.get(), 1.f);
+    }
     float icon = static_cast<float>(options_.iconSize);
     for (size_t i = 0; i < cells_.size(); i++) {
         int index = first_ + static_cast<int>(i);
@@ -1073,7 +1083,7 @@ void Switcher::Start(bool back, bool win) {
         Close();
         return;
     }
-    // Active, as Windows' switcher is: the acrylic draws only on an active window.
+    // Active, as Windows' switcher is, so that it closes when another window takes over.
     Activate(hwnd_, false);
     SetTimer(hwnd_, kRevealTimer, 30, nullptr);
     SetTimer(hwnd_, kAltTimer, 50, nullptr);

@@ -4,7 +4,7 @@
 
 With more than one monitor, Windows opens the Alt+Tab switcher on the primary monitor and lists the windows of every monitor. This add-on for the [Bloom](https://github.com/hyeon1035298/Bloom) launcher opens the switcher on the monitor under the mouse cursor and lists only the windows on that monitor. Win+Alt+Tab does the same.
 
-It can also replace Windows' switcher with an icon switcher: app icons instead of window previews, in Bloom's look (its colors, light or dark and glass as Bloom has them, rounded corners), with a choice of icon size and of which window titles to show.
+It can also replace Windows' switcher with an icon switcher: app icons instead of window previews, in Bloom's look (its colors and accent, light or dark and glass as Bloom has them, a panel with Bloom's G2 corners), with a choice of icon size and of which window titles to show.
 
 The monitor part is the Windhawk mod [Alt+Tab per monitor](https://github.com/ramensoftware/windhawk-mods/blob/main/mods/alt-tab-per-monitor.wh.cpp) by L3r0y and Michael Maltsev, running without Windhawk. `mod/alt-tab-per-monitor.wh.cpp` is the upstream file, unchanged; `mod/bloom-alt-tab.wh.cpp` is this add-on's own code, which includes it, puts its settings in groups for Bloom's settings page and adds the icon switcher. The add-on runtime and host from [PillTaskbar](https://github.com/hyeon1035298/PillTaskbar_BloomAddon) load them into Explorer: the host finds the internal functions the mod hooks, injects a small runtime that provides the Windhawk API the mod uses, and keeps it running.
 

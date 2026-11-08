@@ -36,4 +36,4 @@ pill.theme=system	Windows' app theme
 pill.theme=dark	Dark
 pill.theme=light	Light
 pill.glass	Glass effect
-pill.glass#about	When off, the icon switcher is filled in the theme's color without blur. As a Bloom add-on it follows Bloom's glass effect
+pill.glass#about	When on, a little of what is behind shows through the icon switcher's panel; when off, the panel is filled in the theme's color. As a Bloom add-on it follows Bloom's glass effect

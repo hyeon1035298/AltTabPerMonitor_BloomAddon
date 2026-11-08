@@ -4,7 +4,7 @@
 
 모니터가 여럿일 때 Windows는 Alt+Tab 창을 주 모니터에 띄우고 모든 모니터의 창을 보여 줍니다. [Bloom](https://github.com/hyeon1035298/Bloom) 런처용 이 애드온은 Alt+Tab 창을 마우스 커서가 있는 모니터에 띄우고, 그 모니터의 창만 보여 줍니다. Win+Alt+Tab도 같습니다.
 
-Windows 전환기 대신 아이콘 전환기를 쓸 수도 있습니다. 창 미리보기 대신 앱 아이콘을 Bloom 모양(Bloom의 색, Bloom을 따르는 라이트·다크와 유리 효과, 둥근 모서리)으로 보이고, 아이콘 크기와 창 이름 보이기를 고릅니다.
+Windows 전환기 대신 아이콘 전환기를 쓸 수도 있습니다. 창 미리보기 대신 앱 아이콘을 Bloom 모양(Bloom의 색과 강조색, Bloom을 따르는 라이트·다크와 유리 효과, Bloom의 G2 모서리 판)으로 보이고, 아이콘 크기와 창 이름 보이기를 고릅니다.
 
 모니터 기능은 L3r0y와 Michael Maltsev가 만든 Windhawk 모드 [Alt+Tab per monitor](https://github.com/ramensoftware/windhawk-mods/blob/main/mods/alt-tab-per-monitor.wh.cpp)를 Windhawk 없이 돌린 것입니다. `mod/alt-tab-per-monitor.wh.cpp`는 원본 그대로이고, `mod/bloom-alt-tab.wh.cpp`는 이 애드온의 코드로 원본을 포함해 설정을 Bloom 설정 화면용 묶음으로 나누고 아이콘 전환기를 더합니다. [PillTaskbar](https://github.com/hyeon1035298/PillTaskbar_BloomAddon)의 애드온 런타임과 호스트가 이것을 탐색기에 올립니다.
 
