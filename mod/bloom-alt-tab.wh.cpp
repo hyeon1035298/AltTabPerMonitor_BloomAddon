@@ -2,7 +2,7 @@
 // ==WindhawkMod==
 // @id              alt-tab-per-monitor
 // @name            Alt+Tab per monitor
-// @description     Alt+Tab on the monitor under the cursor, with that monitor's windows, in Windows' switcher or in a switcher of window previews or icons
+// @description     Alt+Tab on the monitor under the cursor, with that monitor's windows, in Windows' switcher or in an icon switcher
 // @version         1.2.1
 // @include         explorer.exe
 // @architecture    x86-64
@@ -14,26 +14,25 @@
 - switcher:
   - style: windows
     $name: 표시 방식
-    $description: 창 미리보기와 아이콘 전환기는 화면을 덮는 배경 없이 이 애드온이 그립니다. 관리자 권한 창이 앞에 있을 때는 Windows 전환기가 뜹니다
+    $description: 아이콘 전환기는 창 미리보기 대신 앱 아이콘을 보입니다. 관리자 권한 창이 앞에 있을 때는 Windows 전환기가 뜹니다
     $options:
-    - windows: Windows 전환기
-    - previews: 창 미리보기 (배경 없이 창만)
+    - windows: Windows 전환기 (창 미리보기)
     - icons: 아이콘 전환기
   - iconSize: medium
-    $name: 크기
-    $description: 창 미리보기와 아이콘 전환기에서
+    $name: 아이콘 크기
+    $description: 아이콘 전환기에서
     $options:
-    - small: 작게
-    - medium: 보통
-    - large: 크게
-    - huge: 아주 크게
+    - small: 작게 (32)
+    - medium: 보통 (48)
+    - large: 크게 (64)
+    - huge: 아주 크게 (96)
   - titles: selected
     $name: 창 이름
-    $description: 창 미리보기와 아이콘 전환기에서
+    $description: 아이콘 전환기에서
     $options:
     - none: 보이지 않음
-    - selected: 고른 창만
-    - all: 모두
+    - selected: 고른 창만 (아이콘 아래 한 줄)
+    - all: 모두 (아이콘마다)
   $name: 전환기
 - monitor:
   - altTabLocation: cursor
@@ -62,7 +61,7 @@
 - pill:
   - theme: system
     $name: 테마
-    $description: 창 미리보기와 아이콘 전환기의 라이트·다크. Bloom 애드온으로 쓰면 Bloom의 테마를 따릅니다
+    $description: 아이콘 전환기의 라이트·다크. Bloom 애드온으로 쓰면 Bloom의 테마를 따릅니다
     $options:
     - system: Windows 앱 테마
     - dark: 다크
@@ -75,18 +74,16 @@
 // ==/WindhawkModSettings==
 
 // The add-on's mod: the Windhawk mod "Alt+Tab per monitor" (alt-tab-per-monitor.wh.cpp,
-// MIT, included below unchanged) and a switcher of the add-on's own that can stand in for
-// Windows' switcher. The settings sit in groups so that Bloom draws a page for them; the
-// included mod reads its four keys from the "monitor" group.
+// MIT, included below unchanged) and an icon switcher of the add-on's own that can stand
+// in for Windows' switcher. The settings sit in groups so that Bloom draws a page for them;
+// the included mod reads its four keys from the "monitor" group.
 //
-// The switcher: a low-level keyboard hook on a thread of its own takes Alt+Tab,
+// The icon switcher: a low-level keyboard hook on a thread of its own takes Alt+Tab,
 // Alt+Shift+Tab and Win+Alt+Tab (Ctrl+Alt+Tab stays Windows') and hands every key to a
 // second thread that lists the windows, draws them and switches. While an elevated window
-// is in front the hook gets no keys, and Windows' switcher comes as before. It shows the
-// windows as live previews (DWM thumbnails on a see-through window, nothing behind them)
-// or as app icons on a panel. The look is Bloom's: its colors, the DWM acrylic Bloom's
-// windows use, rounded corners, Segoe UI. It holds memory only while it is open (see
-// Switcher).
+// is in front the hook gets no keys, and Windows' switcher comes as before. The look is
+// Bloom's: its colors and the accent picked in Bloom, the DWM acrylic Bloom's windows use,
+// rounded corners, Segoe UI. It holds memory only while it is open (see Switcher).
 
 #include <appmodel.h>
 #include <d2d1_1.h>
@@ -138,17 +135,12 @@ using winrt::com_ptr;
 
 // ---- settings -------------------------------------------------------------------------
 
-enum class Style { windows, previews, icons };
 enum class Titles { none, selected, all };
 enum class Theme { system, dark, light };
 
-// By "switcher.iconSize": icons in pixels, previews as the height of their box.
-constexpr int kIconSizes[] = {32, 48, 64, 96};
-constexpr int kPreviewHeights[] = {104, 144, 192, 256};
-
 struct Options {
-    Style style = Style::windows;
-    int size = 1;  // small, medium, large, huge
+    bool icons = false;
+    int iconSize = 48;
     Titles titles = Titles::selected;
     Theme theme = Theme::system;
     bool glass = true;
@@ -164,12 +156,10 @@ bool Is(PCWSTR value, PCWSTR expected) {
 Options ReadOptions() {
     Options o;
     PCWSTR v = Wh_GetStringSetting(L"switcher.style");
-    o.style = Is(v, L"icons")      ? Style::icons
-              : Is(v, L"previews") ? Style::previews
-                                   : Style::windows;
+    o.icons = Is(v, L"icons");
     Wh_FreeStringSetting(v);
     v = Wh_GetStringSetting(L"switcher.iconSize");
-    o.size = Is(v, L"small") ? 0 : Is(v, L"large") ? 2 : Is(v, L"huge") ? 3 : 1;
+    o.iconSize = Is(v, L"small") ? 32 : Is(v, L"large") ? 64 : Is(v, L"huge") ? 96 : 48;
     Wh_FreeStringSetting(v);
     v = Wh_GetStringSetting(L"switcher.titles");
     o.titles = Is(v, L"none") ? Titles::none : Is(v, L"all") ? Titles::all : Titles::selected;
@@ -369,9 +359,6 @@ AccentPair CurrentAccent() {
 }
 // Over the acrylic the window color shows at 70 % (Bloom's 유리 투명도 default of 30 %).
 constexpr uint32_t kGlassAlpha = 0xB3;
-// The previews have no acrylic behind them; their title plates take the window color at
-// 85 % so that the text reads over any desktop.
-constexpr uint32_t kPlateAlpha = 0xD9;
 
 D2D1_COLOR_F Color(uint32_t argb) {
     return {((argb >> 16) & 0xFF) / 255.f, ((argb >> 8) & 0xFF) / 255.f, (argb & 0xFF) / 255.f,
@@ -382,9 +369,6 @@ D2D1_COLOR_F Color(uint32_t argb) {
 constexpr float kPanelPad = 10, kGap = 6, kItemPad = 12, kRadius = 11, kRing = 2;
 constexpr float kFontSize = 12, kLineHeight = 16, kTitleGap = 8, kAllTitlesMinWidth = 140;
 constexpr float kFooterHeight = kTitleGap + kLineHeight + 4;
-// Previews: the box a thumbnail fits in is 16:10; a title plate with a small icon above it.
-constexpr float kPreviewPad = 6, kPreviewGap = 12, kPlateHeight = 26, kPlateRadius = 8;
-constexpr float kTitleIcon = 16, kFallbackIcon = 48;
 
 // ---- windows to list -------------------------------------------------------------------
 
@@ -430,8 +414,7 @@ HMONITOR WindowMonitor(HWND w) {
 struct Entry {
     HWND hwnd;
     std::wstring title;
-    com_ptr<ID2D1Bitmap> icon;  // previews: the title's small icon
-    com_ptr<ID2D1Bitmap> big;   // previews: in the box of a window without a thumbnail
+    com_ptr<ID2D1Bitmap> icon;
 };
 
 std::vector<Entry> ListWindows(bool win, HWND self) {
@@ -458,7 +441,7 @@ std::vector<Entry> ListWindows(bool win, HWND self) {
             if (c.monitor && WindowMonitor(w) != c.monitor) return TRUE;
             wchar_t title[256];
             int n = GetWindowTextW(w, title, ARRAYSIZE(title));
-            c.out->push_back({w, std::wstring(title, std::max(n, 0)), nullptr, nullptr});
+            c.out->push_back({w, std::wstring(title, std::max(n, 0)), nullptr});
             return TRUE;
         },
         reinterpret_cast<LPARAM>(&ctx));
@@ -620,8 +603,7 @@ com_ptr<ID2D1PathGeometry> Squircle(ID2D1Factory* factory, D2D1_RECT_F r, float 
 // Everything the switcher draws with exists only while it is open: the window, the
 // Direct2D software target, the text and imaging factories and the icons are made on
 // Alt+Tab and let go when it closes. Nothing is kept between openings and no timer runs
-// while it is closed. The target draws on the CPU, so no graphics device is made; the
-// previews are DWM thumbnails, which DWM draws, so they cost the process only a handle.
+// while it is closed. The target draws on the CPU, so no graphics device is made.
 class Switcher {
    public:
     void Start(bool back, bool win);
@@ -639,22 +621,15 @@ class Switcher {
     bool Open();
     bool Make();
     void Free();
-    com_ptr<ID2D1Bitmap> IconFor(HWND w, float dips);
+    com_ptr<ID2D1Bitmap> IconFor(HWND w);
     com_ptr<ID2D1Bitmap> FromIcon(HICON icon);
     com_ptr<ID2D1Bitmap> FromBitmap(HBITMAP bitmap);
     RECT Layout(HMONITOR monitor);
     void PlaceCells();
-    void ShowThumbnails();
-    void DropThumbnails();
     void ApplyBackdrop();
     void Paint();
     void Draw();
-    void DrawIcon(ID2D1Bitmap* bitmap, D2D1_RECT_F dest);
-    void DrawPreview(size_t cell, ID2D1SolidColorBrush* brush);
-    D2D1_RECT_F PreviewBox(const D2D1_RECT_F& cell) const;
     int HitTest(LPARAM lp) const;
-
-    bool Previews() const { return options_.style == Style::previews; }
 
     HWND hwnd_ = nullptr;
     Options options_;
@@ -666,16 +641,10 @@ class Switcher {
     HWND before_ = nullptr;
 
     // Layout in DIPs.
-    float dpi_ = 96, cellW_ = 0, cellH_ = 0, footer_ = 0, width_ = 0, height_ = 0, gap_ = 0;
+    float dpi_ = 96, cellW_ = 0, cellH_ = 0, footer_ = 0, width_ = 0, height_ = 0;
     int cols_ = 1, perPage_ = 1;
     std::vector<D2D1_RECT_F> cells_;  // the current page's cells
     int first_ = 0;                   // the entry in the first cell
-    // Previews: one per cell, null where the window gives no thumbnail.
-    struct Thumbnail {
-        HTHUMBNAIL id = nullptr;
-        RECT dest{};  // in pixels of the switcher's client area
-    };
-    std::vector<Thumbnail> thumbnails_;
 
     com_ptr<ID2D1Factory> d2d_;
     com_ptr<ID2D1DCRenderTarget> target_;
@@ -776,9 +745,7 @@ bool Switcher::Make() {
         FAILED(dwrite_->CreateEllipsisTrimmingSign(font_.get(), ellipsis_.put()))) {
         return false;
     }
-    // Icons have their titles centered under them, previews on a plate after a small icon.
-    font_->SetTextAlignment(Previews() ? DWRITE_TEXT_ALIGNMENT_LEADING
-                                       : DWRITE_TEXT_ALIGNMENT_CENTER);
+    font_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
     font_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     font_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
     DWRITE_TRIMMING trimming{DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0};
@@ -788,8 +755,7 @@ bool Switcher::Make() {
 }
 
 void Switcher::Free() {
-    DropThumbnails();
-    for (auto& e : entries_) e.icon = e.big = nullptr;
+    for (auto& e : entries_) e.icon = nullptr;
     icons_.clear();
     context_ = nullptr;
     target_ = nullptr;
@@ -841,10 +807,9 @@ HICON LoadIconLocation(const std::wstring& location, int px) {
     return icon;
 }
 
-com_ptr<ID2D1Bitmap> Switcher::IconFor(HWND w, float dips) {
-    int px = static_cast<int>(std::lround(dips * dpi_ / 96));
+com_ptr<ID2D1Bitmap> Switcher::IconFor(HWND w) {
+    int px = static_cast<int>(std::lround(options_.iconSize * dpi_ / 96));
     auto shared = [&](std::wstring key, auto&& make) -> com_ptr<ID2D1Bitmap> {
-        key += L'@' + std::to_wstring(px);
         if (auto it = icons_.find(key); it != icons_.end()) return it->second;
         com_ptr<ID2D1Bitmap> bitmap = make();
         if (bitmap) icons_.emplace(std::move(key), bitmap);
@@ -911,37 +876,25 @@ RECT Switcher::Layout(HMONITOR monitor) {
     float scale = dpi_ / 96;
     float workW = (work.right - work.left) / scale, workH = (work.bottom - work.top) / scale;
 
-    if (Previews()) {
-        // A box per window with its title plate above, every title in the same row
-        // whether shown or not, so that the boxes line up.
-        float box = static_cast<float>(kPreviewHeights[options_.size]);
-        cellW_ = std::round(box * 1.6f) + 2 * kPreviewPad;
-        cellH_ = box + 2 * kPreviewPad;
-        if (options_.titles != Titles::none) cellH_ += kPlateHeight + kPreviewPad;
-        footer_ = 0;
-        gap_ = kPreviewGap;
-    } else {
-        float icon = static_cast<float>(kIconSizes[options_.size]);
-        cellW_ = icon + 2 * kItemPad;
-        cellH_ = icon + 2 * kItemPad;
-        if (options_.titles == Titles::all) {
-            cellW_ = std::max(cellW_, kAllTitlesMinWidth);
-            cellH_ += kTitleGap + kLineHeight;
-        }
-        footer_ = options_.titles == Titles::selected ? kFooterHeight : 0;
-        gap_ = kGap;
+    float icon = static_cast<float>(options_.iconSize);
+    cellW_ = icon + 2 * kItemPad;
+    cellH_ = icon + 2 * kItemPad;
+    if (options_.titles == Titles::all) {
+        cellW_ = std::max(cellW_, kAllTitlesMinWidth);
+        cellH_ += kTitleGap + kLineHeight;
     }
+    footer_ = options_.titles == Titles::selected ? kFooterHeight : 0;
 
     int n = static_cast<int>(entries_.size());
     float maxW = workW * 0.9f - 2 * kPanelPad, maxH = workH * 0.8f - 2 * kPanelPad - footer_;
-    cols_ = std::clamp(static_cast<int>((maxW + gap_) / (cellW_ + gap_)), 1, n);
+    cols_ = std::clamp(static_cast<int>((maxW + kGap) / (cellW_ + kGap)), 1, n);
     int rows = (n + cols_ - 1) / cols_;
-    int maxRows = std::max(1, static_cast<int>((maxH + gap_) / (cellH_ + gap_)));
+    int maxRows = std::max(1, static_cast<int>((maxH + kGap) / (cellH_ + kGap)));
     rows = std::min(rows, maxRows);
     perPage_ = cols_ * rows;
 
-    width_ = 2 * kPanelPad + cols_ * cellW_ + (cols_ - 1) * gap_;
-    height_ = 2 * kPanelPad + rows * cellH_ + (rows - 1) * gap_ + footer_;
+    width_ = 2 * kPanelPad + cols_ * cellW_ + (cols_ - 1) * kGap;
+    height_ = 2 * kPanelPad + rows * cellH_ + (rows - 1) * kGap + footer_;
     int w = static_cast<int>(std::lround(width_ * scale));
     int h = static_cast<int>(std::lround(height_ * scale));
     int x = work.left + (work.right - work.left - w) / 2;
@@ -959,84 +912,16 @@ void Switcher::PlaceCells() {
         int row = i / cols_, col = i % cols_;
         // A short last row sits in the middle.
         int inRow = std::min(cols_, shown - row * cols_);
-        float x = kPanelPad + (cols_ - inRow) * (cellW_ + gap_) / 2 + col * (cellW_ + gap_);
-        float y = kPanelPad + row * (cellH_ + gap_);
+        float x = kPanelPad + (cols_ - inRow) * (cellW_ + kGap) / 2 + col * (cellW_ + kGap);
+        float y = kPanelPad + row * (cellH_ + kGap);
         cells_.push_back(D2D1::RectF(x, y, x + cellW_, y + cellH_));
     }
-}
-
-// The box a cell's thumbnail fits in, under its title plate.
-D2D1_RECT_F Switcher::PreviewBox(const D2D1_RECT_F& cell) const {
-    float top = cell.top + kPreviewPad;
-    if (options_.titles != Titles::none) top += kPlateHeight + kPreviewPad;
-    return {cell.left + kPreviewPad, top, cell.right - kPreviewPad, cell.bottom - kPreviewPad};
-}
-
-// Previews: asks DWM to draw each cell's window, fitted in its box and never enlarged.
-// DWM draws them over the switcher's own pixels.
-void Switcher::ShowThumbnails() {
-    DropThumbnails();
-    if (!Previews() || !hwnd_) return;
-    float scale = dpi_ / 96;
-    thumbnails_.resize(cells_.size());
-    for (size_t i = 0; i < cells_.size(); i++) {
-        Thumbnail& t = thumbnails_[i];
-        SIZE source{};
-        if (FAILED(DwmRegisterThumbnail(hwnd_, entries_[first_ + i].hwnd, &t.id))) {
-            t.id = nullptr;
-            continue;
-        }
-        // A minimized window may give only its caption's sliver; it gets its icon instead.
-        if (FAILED(DwmQueryThumbnailSourceSize(t.id, &source)) || source.cx < 48 ||
-            source.cy < 48) {
-            DwmUnregisterThumbnail(t.id);
-            t.id = nullptr;
-            continue;
-        }
-        D2D1_RECT_F box = PreviewBox(cells_[i]);
-        float bw = (box.right - box.left) * scale, bh = (box.bottom - box.top) * scale;
-        float fit = std::min({bw / source.cx, bh / source.cy, 1.f});
-        int w = static_cast<int>(std::lround(source.cx * fit));
-        int h = static_cast<int>(std::lround(source.cy * fit));
-        int x = static_cast<int>(std::lround(box.left * scale + (bw - w) / 2));
-        int y = static_cast<int>(std::lround(box.top * scale + (bh - h) / 2));
-        t.dest = {x, y, x + w, y + h};
-        DWM_THUMBNAIL_PROPERTIES p{};
-        p.dwFlags = DWM_TNP_RECTDESTINATION | DWM_TNP_VISIBLE | DWM_TNP_OPACITY |
-                    DWM_TNP_SOURCECLIENTAREAONLY;
-        p.rcDestination = t.dest;
-        p.opacity = 255;
-        p.fVisible = TRUE;
-        p.fSourceClientAreaOnly = FALSE;
-        DwmUpdateThumbnailProperties(t.id, &p);
-    }
-}
-
-void Switcher::DropThumbnails() {
-    for (auto& t : thumbnails_) {
-        if (t.id) DwmUnregisterThumbnail(t.id);
-    }
-    std::vector<Thumbnail>().swap(thumbnails_);
 }
 
 void Switcher::ApplyBackdrop() {
     BOOL noAnimation = TRUE;
     DwmSetWindowAttribute(hwnd_, DWMWA_TRANSITIONS_FORCEDISABLED, &noAnimation,
                           sizeof(noAnimation));
-    if (Previews()) {
-        // See-through: no backdrop, corners or border, the frame spread over the whole
-        // window so that its pixels' alpha counts. Only the windows and their marks show.
-        glass_ = false;
-        DWM_WINDOW_CORNER_PREFERENCE square = DWMWCP_DONOTROUND;
-        DwmSetWindowAttribute(hwnd_, DWMWA_WINDOW_CORNER_PREFERENCE, &square, sizeof(square));
-        COLORREF none = DWMWA_COLOR_NONE;
-        DwmSetWindowAttribute(hwnd_, DWMWA_BORDER_COLOR, &none, sizeof(none));
-        DWM_SYSTEMBACKDROP_TYPE backdrop = DWMSBT_NONE;
-        DwmSetWindowAttribute(hwnd_, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof(backdrop));
-        MARGINS all{-1, -1, -1, -1};
-        DwmExtendFrameIntoClientArea(hwnd_, &all);
-        return;
-    }
     DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUND;
     DwmSetWindowAttribute(hwnd_, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
     BOOL dark = look_.dark;
@@ -1069,65 +954,15 @@ void Switcher::Paint() {
     EndPaint(hwnd_, &ps);
 }
 
-void Switcher::DrawIcon(ID2D1Bitmap* bitmap, D2D1_RECT_F dest) {
-    if (!bitmap) return;
-    if (context_) {
-        context_->DrawBitmap(bitmap, &dest, 1.f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC,
-                             nullptr, nullptr);
-    } else {
-        target_->DrawBitmap(bitmap, &dest, 1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, nullptr);
-    }
-}
-
-// A preview cell: DWM puts the thumbnail in the box; this draws the title plate above it,
-// and the app's icon on a plate where the window gives no thumbnail.
-void Switcher::DrawPreview(size_t i, ID2D1SolidColorBrush* brush) {
-    int index = first_ + static_cast<int>(i);
-    const D2D1_RECT_F& cell = cells_[i];
-    Entry& e = entries_[index];
-    uint32_t plate = (look_.solid & 0x00FFFFFF) | (kPlateAlpha << 24);
-    D2D1_RECT_F box = PreviewBox(cell);
-    if (i >= thumbnails_.size() || !thumbnails_[i].id) {
-        if (auto shape = Squircle(d2d_.get(), box, kRadius)) {
-            brush->SetColor(Color(plate));
-            target_->FillGeometry(shape.get(), brush);
-        }
-        if (!e.big) e.big = IconFor(e.hwnd, kFallbackIcon);
-        float x = (box.left + box.right - kFallbackIcon) / 2;
-        float y = (box.top + box.bottom - kFallbackIcon) / 2;
-        DrawIcon(e.big.get(), {x, y, x + kFallbackIcon, y + kFallbackIcon});
-    }
-    bool title = options_.titles == Titles::all ||
-                 (options_.titles == Titles::selected && index == selected_);
-    if (!title) return;
-    float top = cell.top + kPreviewPad;
-    D2D1_RECT_F bar{box.left, top, box.right, top + kPlateHeight};
-    if (auto shape = Squircle(d2d_.get(), bar, kPlateRadius)) {
-        brush->SetColor(Color(plate));
-        target_->FillGeometry(shape.get(), brush);
-    }
-    if (!e.icon) e.icon = IconFor(e.hwnd, kTitleIcon);
-    float iconTop = (bar.top + bar.bottom - kTitleIcon) / 2;
-    DrawIcon(e.icon.get(),
-             {bar.left + 6, iconTop, bar.left + 6 + kTitleIcon, iconTop + kTitleIcon});
-    brush->SetColor(Color(look_.text));
-    D2D1_RECT_F line{bar.left + 6 + kTitleIcon + 6, bar.top, bar.right - 8, bar.bottom};
-    target_->DrawText(e.title.c_str(), static_cast<UINT32>(e.title.size()), font_.get(), &line,
-                      brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
-}
-
 void Switcher::Draw() {
     target_->BeginDraw();
-    // Previews: nothing behind the windows.
-    uint32_t ground = Previews() ? 0
-                      : glass_   ? (look_.solid & 0x00FFFFFF) | (kGlassAlpha << 24)
-                                 : look_.solid;
+    uint32_t ground = glass_ ? (look_.solid & 0x00FFFFFF) | (kGlassAlpha << 24) : look_.solid;
     target_->Clear(Color(ground));
     target_->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
 
     com_ptr<ID2D1SolidColorBrush> brush;
     target_->CreateSolidColorBrush(Color(look_.text), brush.put());
-    float icon = static_cast<float>(kIconSizes[options_.size]);
+    float icon = static_cast<float>(options_.iconSize);
     for (size_t i = 0; i < cells_.size(); i++) {
         int index = first_ + static_cast<int>(i);
         const D2D1_RECT_F& cell = cells_[i];
@@ -1147,13 +982,18 @@ void Switcher::Draw() {
                 if (ring) target_->DrawGeometry(ring.get(), brush.get(), kRing);
             }
         }
-        if (Previews()) {
-            DrawPreview(i, brush.get());
-            continue;
-        }
-        if (!e.icon) e.icon = IconFor(e.hwnd, icon);
+        if (!e.icon) e.icon = IconFor(e.hwnd);
         float left = (cell.left + cell.right - icon) / 2, top = cell.top + kItemPad;
-        DrawIcon(e.icon.get(), {left, top, left + icon, top + icon});
+        if (e.icon) {
+            D2D1_RECT_F dest{left, top, left + icon, top + icon};
+            if (context_) {
+                context_->DrawBitmap(e.icon.get(), &dest, 1.f,
+                                     D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, nullptr, nullptr);
+            } else {
+                target_->DrawBitmap(e.icon.get(), &dest, 1.f,
+                                    D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, nullptr);
+            }
+        }
         if (options_.titles == Titles::all) {
             brush->SetColor(Color(look_.text));
             float y = top + icon + kTitleGap;
@@ -1162,7 +1002,7 @@ void Switcher::Draw() {
                               &line, brush.get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
         }
     }
-    if (!Previews() && options_.titles == Titles::selected) {
+    if (options_.titles == Titles::selected) {
         const auto& title = entries_[selected_].title;
         float y = height_ - kPanelPad - kLineHeight - 2;
         brush->SetColor(Color(look_.text));
@@ -1172,7 +1012,7 @@ void Switcher::Draw() {
     }
     if (target_->EndDraw() == D2DERR_RECREATE_TARGET) {
         // A software target should never lose its device; drop the icons drawn on it.
-        for (auto& e : entries_) e.icon = e.big = nullptr;
+        for (auto& e : entries_) e.icon = nullptr;
         icons_.clear();
     }
 }
@@ -1199,7 +1039,6 @@ bool Switcher::Open() {
                             this);
     if (!hwnd_) return false;
     ApplyBackdrop();
-    ShowThumbnails();
     // Hidden from the screen until its first frame is there.
     BOOL cloak = TRUE;
     DwmSetWindowAttribute(hwnd_, DWMWA_CLOAK, &cloak, sizeof(cloak));
@@ -1245,7 +1084,6 @@ void Switcher::Step(int delta) {
     selected_ = ((selected_ + delta) % n + n) % n;
     if (selected_ < first_ || selected_ >= first_ + static_cast<int>(cells_.size())) {
         PlaceCells();
-        ShowThumbnails();  // the new page's windows
     }
     InvalidateRect(hwnd_, nullptr, FALSE);
 }
@@ -1266,7 +1104,6 @@ void Switcher::Cancel() {
 
 // Lets go of everything the opening made.
 void Switcher::Close() {
-    DropThumbnails();
     if (HWND w = hwnd_) {
         hwnd_ = nullptr;  // the window's last messages go to DefWindowProc
         DestroyWindow(w);  // its timers go with it
@@ -1446,7 +1283,7 @@ void Apply() {
     AcquireSRWLockExclusive(&g_optionsLock);
     g_options = o;
     ReleaseSRWLockExclusive(&g_optionsLock);
-    if (o.style != Style::windows) {
+    if (o.icons) {
         Start();
     } else {
         Stop();
