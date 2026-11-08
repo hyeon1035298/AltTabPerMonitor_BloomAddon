@@ -1,0 +1,39 @@
+group:switcher	Switcher
+switcher.style	Look
+switcher.style#about	The icon switcher shows app icons instead of window previews. While an elevated window is in front, Windows' switcher appears
+switcher.style=windows	Windows' switcher (window previews)
+switcher.style=icons	Icon switcher
+switcher.iconSize	Icon size
+switcher.iconSize#about	In the icon switcher
+switcher.iconSize=small	Small (32)
+switcher.iconSize=medium	Medium (48)
+switcher.iconSize=large	Large (64)
+switcher.iconSize=huge	Huge (96)
+switcher.titles	Window titles
+switcher.titles#about	In the icon switcher
+switcher.titles=none	Hidden
+switcher.titles=selected	The chosen window's only (one line under the icons)
+switcher.titles=all	All (under each icon)
+group:monitor	Monitor
+monitor.altTabLocation	Alt+Tab: monitor it appears on
+monitor.altTabLocation=cursor	The monitor under the cursor
+monitor.altTabLocation=primary	The primary monitor
+monitor.altTabWindows	Alt+Tab: windows to show
+monitor.altTabWindows=cursorMonitor	The windows on the cursor's monitor
+monitor.altTabWindows=allMonitors	The windows on every monitor
+monitor.altTabWindows=cursorMonitorExceptPrimary	The windows on the cursor's monitor, every window on the primary one
+monitor.winAltTabLocation	Win+Alt+Tab: monitor it appears on
+monitor.winAltTabLocation=cursor	The monitor under the cursor
+monitor.winAltTabLocation=primary	The primary monitor
+monitor.winAltTabWindows	Win+Alt+Tab: windows to show
+monitor.winAltTabWindows=cursorMonitor	The windows on the cursor's monitor
+monitor.winAltTabWindows=allMonitors	The windows on every monitor
+monitor.winAltTabWindows=cursorMonitorExceptPrimary	The windows on the cursor's monitor, every window on the primary one
+group:pill	Look
+pill.theme	Theme
+pill.theme#about	Light or dark for the icon switcher. As a Bloom add-on it follows Bloom's theme
+pill.theme=system	Windows' app theme
+pill.theme=dark	Dark
+pill.theme=light	Light
+pill.glass	Glass effect
+pill.glass#about	When off, the icon switcher is filled in the theme's color without blur. As a Bloom add-on it follows Bloom's glass effect

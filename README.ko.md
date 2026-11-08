@@ -4,7 +4,9 @@
 
 모니터가 여럿일 때 Windows는 Alt+Tab 창을 주 모니터에 띄우고 모든 모니터의 창을 보여 줍니다. [Bloom](https://github.com/hyeon1035298/Bloom) 런처용 이 애드온은 Alt+Tab 창을 마우스 커서가 있는 모니터에 띄우고, 그 모니터의 창만 보여 줍니다. Win+Alt+Tab도 같습니다.
 
-L3r0y와 Michael Maltsev가 만든 Windhawk 모드 [Alt+Tab per monitor](https://github.com/ramensoftware/windhawk-mods/blob/main/mods/alt-tab-per-monitor.wh.cpp)를 Windhawk 없이 돌립니다. `mod/`의 모드 소스는 원본 그대로입니다. [PillTaskbar](https://github.com/hyeon1035298/PillTaskbar_BloomAddon)의 애드온 런타임과 호스트가 이 모드를 탐색기에 올립니다.
+Windows 전환기 대신 아이콘 전환기를 쓸 수도 있습니다. 창 미리보기 대신 앱 아이콘을 Bloom 모양(Bloom의 색, Bloom을 따르는 라이트·다크와 유리 효과, 둥근 모서리)으로 보이고, 아이콘 크기와 창 이름 보이기를 고릅니다.
+
+모니터 기능은 L3r0y와 Michael Maltsev가 만든 Windhawk 모드 [Alt+Tab per monitor](https://github.com/ramensoftware/windhawk-mods/blob/main/mods/alt-tab-per-monitor.wh.cpp)를 Windhawk 없이 돌린 것입니다. `mod/alt-tab-per-monitor.wh.cpp`는 원본 그대로이고, `mod/bloom-alt-tab.wh.cpp`는 이 애드온의 코드로 원본을 포함해 설정을 Bloom 설정 화면용 묶음으로 나누고 아이콘 전환기를 더합니다. [PillTaskbar](https://github.com/hyeon1035298/PillTaskbar_BloomAddon)의 애드온 런타임과 호스트가 이것을 탐색기에 올립니다.
 
 ## 필요한 것
 
@@ -21,11 +23,17 @@ L3r0y와 Michael Maltsev가 만든 Windhawk 모드 [Alt+Tab per monitor](https:/
 
 ## 설정
 
-Bloom에는 이 애드온의 설정 화면이 없습니다. 기본값은 Alt+Tab과 Win+Alt+Tab 모두 "커서가 있는 모니터에, 그 모니터의 창만"입니다(원래 모드는 Win+Alt+Tab이 주 모니터, 모든 창). 바꾸려면 `%APPDATA%\Bloom\addons\alt-tab-per-monitor\settings.json`에 바꿀 키만 적고 Bloom에서 애드온을 껐다 켭니다. 키와 값은 [README.md](README.md#settings)의 표에 있습니다.
+Bloom 설정 › 애드온 › 모니터별 Alt+Tab 화면에서 바꾸며 바로 적용됩니다.
 
-```json
-{ "winAltTabLocation": "primary", "winAltTabWindows": "allMonitors" }
-```
+- 전환기: 표시 방식(Windows 전환기 / 아이콘 전환기), 아이콘 크기(32, 48, 64, 96, 기본 48), 창 이름(보이지 않음 / 고른 창만 / 모두, 기본 고른 창만)
+- 모니터: Alt+Tab과 Win+Alt+Tab 각각 나타날 모니터와 보일 창. 기본값은 둘 다 "커서가 있는 모니터에, 그 모니터의 창만"입니다(원래 모드는 Win+Alt+Tab이 주 모니터, 모든 창).
+- 아이콘 전환기의 테마와 유리 효과는 Bloom 설정을 따릅니다. 강조색은 Bloom 기본 장미색이고, Bloom에서 고른 강조색은 아직 따르지 않습니다.
+
+키와 값은 [README.md](README.md#settings)의 표에 있습니다. 1.2.1-3까지는 모니터 키 4개에 `monitor.`가 붙지 않았으므로, 업데이트 뒤 설정 화면에서 다시 골라 주세요.
+
+### 아이콘 전환기
+
+탐색기 안의 저수준 키보드 훅으로 Alt+Tab, Alt+Shift+Tab, Win+Alt+Tab을 받습니다. Alt를 누른 채 Tab, Shift+Tab, 화살표로 옮기고, Enter나 스페이스로 바로 넘어가고, Esc로 닫고, 클릭으로 고릅니다. Alt를 떼면 고른 창으로 넘어갑니다. Ctrl+Alt+Tab은 Windows 그대로입니다. 관리자 권한 창이 앞에 있으면 Windows가 탐색기의 훅에 키를 주지 않아 Windows 전환기가 위 설정의 모니터에 뜹니다.
 
 ## 빌드
 
@@ -33,4 +41,4 @@ Bloom에는 이 애드온의 설정 화면이 없습니다. 기본값은 Alt+Tab
 
 ## 라이선스
 
-GNU General Public License 3.0 only(`LICENSE`). `mod/`의 모드 소스는 MIT이고, 출처와 라이선스 전문은 `THIRD_PARTY.md`에 있습니다. 보증은 없습니다. 탐색기(explorer.exe) 안의 코드를 바꾸므로 본인 책임으로 쓰세요. Microsoft, Windhawk 개발자, 모드 작성자와 관계없는 프로젝트입니다.
+GNU General Public License 3.0 only(`LICENSE`). `mod/alt-tab-per-monitor.wh.cpp`는 MIT이고, 출처와 라이선스 전문은 `THIRD_PARTY.md`에 있습니다. 보증은 없습니다. 탐색기(explorer.exe) 안의 코드를 바꾸므로 본인 책임으로 쓰세요. Microsoft, Windhawk 개발자, 모드 작성자와 관계없는 프로젝트입니다.

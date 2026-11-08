@@ -9,7 +9,7 @@ GNU General Public License, version 3 only (`LICENSE`). It combines the parts be
 "Alt+Tab per monitor" from the windhawk-mods collection, unchanged:
 https://github.com/ramensoftware/windhawk-mods/blob/main/mods/alt-tab-per-monitor.wh.cpp
 
-It is built into `AltTabPerMonitor.dll`. L3r0y (https://github.com/L3r0yThingz) wrote
+`mod/bloom-alt-tab.wh.cpp` includes it, and the two are built into `AltTabPerMonitor.dll`. L3r0y (https://github.com/L3r0yThingz) wrote
 the mod; Michael Maltsev (https://github.com/m417z) made the changes in versions 1.2
 and 1.2.1.
 
@@ -41,6 +41,15 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## The add-on's own mod code (GPL-3.0-only)
+
+`mod/bloom-alt-tab.wh.cpp` was written for this add-on: the settings in groups for
+Bloom's settings page and the icon switcher. It uses only Windows APIs (Direct2D,
+DirectWrite, DirectComposition, DWM, WIC, the shell) and contains no code from other
+projects. Its colors and sizes are Bloom's (https://github.com/hyeon1035298/Bloom,
+GPL-3.0-only). The Windhawk mod "Simple Window Switcher" suggested the icon switcher;
+none of its code is used.
 
 ## The add-on runtime and host (GPL-3.0-only)
 
