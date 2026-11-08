@@ -6,7 +6,7 @@
 // @version         1.2.1
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lole32 -loleaut32 -lversion -ld2d1 -ld3d11 -ldcomp -ldwmapi -ldwrite -ldxgi -lgdi32 -lshcore -lshell32 -lshlwapi -luuid -lwindowscodecs
+// @compilerOptions -lole32 -loleaut32 -lversion -ld2d1 -ldwmapi -ldwrite -lgdi32 -lshcore -lshell32 -lshlwapi -luuid -luxtheme -lwindowscodecs
 // ==/WindhawkMod==
 
 // ==WindhawkModSettings==
@@ -83,19 +83,18 @@
 // second thread that lists the windows, draws them and switches. While an elevated window
 // is in front the hook gets no keys, and Windows' switcher comes as before. The look is
 // Bloom's: its colors, the DWM acrylic Bloom's windows use, rounded corners, Segoe UI.
+// It holds memory only while it is open (see Switcher).
 
 #include <appmodel.h>
 #include <d2d1_1.h>
-#include <d3d11.h>
-#include <dcomp.h>
 #include <dwmapi.h>
 #include <dwrite.h>
-#include <dxgi1_2.h>
 #include <propsys.h>
 #include <shellapi.h>
 #include <shellscalingapi.h>
 #include <shlobj.h>
 #include <shlwapi.h>
+#include <uxtheme.h>
 #include <wincodec.h>
 #include <windowsx.h>
 
@@ -440,31 +439,36 @@ com_ptr<ID2D1PathGeometry> Squircle(ID2D1Factory* factory, D2D1_RECT_F r, float 
     return path;
 }
 
+// Everything the switcher draws with exists only while it is open: the window, the
+// Direct2D software target, the text and imaging factories and the icons are made on
+// Alt+Tab and let go when it closes. Nothing is kept between openings and no timer runs
+// while it is closed. The target draws on the CPU, so no graphics device is made.
 class Switcher {
    public:
-    bool Create();
-    void Destroy();
-    HWND Hwnd() const { return hwnd_; }
+    void Start(bool back, bool win);
+    void Step(int delta);
+    void Commit(int index);
+    void Cancel();
+    void Close();
+    bool IsOpen() const { return hwnd_ != nullptr; }
+    int Cols() const { return cols_; }
 
    private:
     static LRESULT CALLBACK Proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
     LRESULT Handle(UINT msg, WPARAM wp, LPARAM lp);
 
-    void Start(bool back, bool win);
-    void Step(int delta);
-    void Commit(int index);
-    void Cancel();
-    void Hide();
-    int HitTest(LPARAM lp) const;
-
-    bool EnsureDevice();
-    void DropDevice();
+    bool Open();
+    bool Make();
+    void Free();
     com_ptr<ID2D1Bitmap> IconFor(HWND w);
     com_ptr<ID2D1Bitmap> FromIcon(HICON icon);
     com_ptr<ID2D1Bitmap> FromBitmap(HBITMAP bitmap);
-    void Layout(HMONITOR monitor);
-    void Draw();
+    RECT Layout(HMONITOR monitor);
+    void PlaceCells();
     void ApplyBackdrop();
+    void Paint();
+    void Draw();
+    int HitTest(LPARAM lp) const;
 
     HWND hwnd_ = nullptr;
     Options options_;
@@ -472,65 +476,39 @@ class Switcher {
     bool glass_ = false;
     std::vector<Entry> entries_;
     int selected_ = 0, hover_ = -1;
-    bool shown_ = false, switching_ = false;
+    bool switching_ = false;
     HWND before_ = nullptr;
 
     // Layout in DIPs.
-    float dpi_ = 96, cellW_ = 0, cellH_ = 0, footer_ = 0;
+    float dpi_ = 96, cellW_ = 0, cellH_ = 0, footer_ = 0, width_ = 0, height_ = 0;
     int cols_ = 1, perPage_ = 1;
     std::vector<D2D1_RECT_F> cells_;  // the current page's cells
     int first_ = 0;                   // the entry in the first cell
-    UINT width_ = 0, height_ = 0;     // pixels
 
-    com_ptr<ID3D11Device> d3d_;
-    com_ptr<ID2D1Factory1> d2d_;
-    com_ptr<ID2D1DeviceContext> dc_;
-    com_ptr<IDXGISwapChain1> chain_;
-    com_ptr<IDCompositionDevice> comp_;
-    com_ptr<IDCompositionTarget> target_;
-    com_ptr<IDCompositionVisual> visual_;
+    com_ptr<ID2D1Factory> d2d_;
+    com_ptr<ID2D1DCRenderTarget> target_;
+    com_ptr<ID2D1DeviceContext> context_;  // the same target, for its better scaling
     com_ptr<IDWriteFactory> dwrite_;
     com_ptr<IDWriteTextFormat> font_;
     com_ptr<IDWriteInlineObject> ellipsis_;
     com_ptr<IWICImagingFactory> wic_;
-    std::unordered_map<std::wstring, com_ptr<ID2D1Bitmap>> cache_;
+    // One opening's icons by source, so windows of one program share theirs.
+    std::unordered_map<std::wstring, com_ptr<ID2D1Bitmap>> icons_;
 };
 
+// Thread messages from the hook thread to the switcher's thread.
 enum : UINT {
     kStart = WM_APP + 1,  // wParam: 1 back (Shift), lParam: 1 Win held
     kStep,                // wParam: steps as int, lParam: 1 by rows
     kCommit,
     kCancel,
-    kReload,
+    kStopUi,
 };
 enum : UINT_PTR { kRevealTimer = 1, kAltTimer = 2 };
 constexpr wchar_t kClassName[] = L"AltTabPerMonitor.IconSwitcher";
 
-bool Switcher::Create() {
-    WNDCLASSEXW wc{sizeof(wc)};
-    wc.lpfnWndProc = Proc;
-    wc.hInstance = reinterpret_cast<HINSTANCE>(&__ImageBase);
-    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    wc.lpszClassName = kClassName;
-    RegisterClassExW(&wc);
-    hwnd_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOREDIRECTIONBITMAP,
-                            kClassName, L"", WS_POPUP, 0, 0, 1, 1, nullptr, nullptr,
-                            wc.hInstance, this);
-    if (!hwnd_) return false;
-    BOOL noAnimation = TRUE;
-    DwmSetWindowAttribute(hwnd_, DWMWA_TRANSITIONS_FORCEDISABLED, &noAnimation,
-                          sizeof(noAnimation));
-    DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUND;
-    DwmSetWindowAttribute(hwnd_, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
-    return true;
-}
-
-void Switcher::Destroy() {
-    DropDevice();
-    if (hwnd_) DestroyWindow(hwnd_);
-    hwnd_ = nullptr;
-    UnregisterClassW(kClassName, reinterpret_cast<HINSTANCE>(&__ImageBase));
-}
+// Set by the hook thread when it takes a Tab, cleared once the switcher is done.
+std::atomic<bool> g_active{false};
 
 LRESULT CALLBACK Switcher::Proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == WM_NCCREATE) {
@@ -543,38 +521,25 @@ LRESULT CALLBACK Switcher::Proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                                        : DefWindowProcW(hwnd, msg, wp, lp);
 }
 
-// Set by the hook thread when it takes a Tab, cleared here once the switcher is done.
-std::atomic<bool> g_active{false};
-
 LRESULT Switcher::Handle(UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
-        case kStart:
-            Start(wp != 0, lp != 0);
+        case WM_PAINT:
+            Paint();
             return 0;
-        case kStep:
-            if (shown_) Step(static_cast<int>(wp) * (lp ? cols_ : 1));
-            return 0;
-        case kCommit:
-            if (shown_) Commit(selected_);
-            return 0;
-        case kCancel:
-            if (shown_) Cancel();
-            return 0;
-        case kReload:
-            cache_.clear();
-            return 0;
+        case WM_ERASEBKGND:
+            return 1;
         case WM_TIMER:
             if (wp == kRevealTimer) {
                 KillTimer(hwnd_, kRevealTimer);
                 BOOL cloak = FALSE;
                 DwmSetWindowAttribute(hwnd_, DWMWA_CLOAK, &cloak, sizeof(cloak));
-            } else if (wp == kAltTimer && shown_ && GetAsyncKeyState(VK_MENU) >= 0) {
+            } else if (wp == kAltTimer && GetAsyncKeyState(VK_MENU) >= 0) {
                 // The hook missed Alt going up (an elevated window took the keys).
-                Commit(selected_);
+                Commit(-1);
             }
             return 0;
         case WM_ACTIVATE:
-            if (LOWORD(wp) == WA_INACTIVE && shown_ && !switching_) Hide();
+            if (LOWORD(wp) == WA_INACTIVE && !switching_) Close();
             return 0;
         case WM_MOUSEMOVE: {
             int hit = HitTest(lp);
@@ -582,21 +547,19 @@ LRESULT Switcher::Handle(UINT msg, WPARAM wp, LPARAM lp) {
                 hover_ = hit;
                 TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, hwnd_, 0};
                 TrackMouseEvent(&track);
-                Draw();
+                InvalidateRect(hwnd_, nullptr, FALSE);
             }
             return 0;
         }
         case WM_MOUSELEAVE:
             if (hover_ != -1) {
                 hover_ = -1;
-                Draw();
+                InvalidateRect(hwnd_, nullptr, FALSE);
             }
             return 0;
-        case WM_LBUTTONUP: {
-            int hit = HitTest(lp);
-            if (shown_ && hit >= 0) Commit(hit);
+        case WM_LBUTTONUP:
+            if (int hit = HitTest(lp); hit >= 0) Commit(hit);
             return 0;
-        }
         case WM_SYSCOMMAND:
             if ((wp & 0xFFF0) == SC_KEYMENU) return 0;  // Alt going up
             break;
@@ -606,89 +569,40 @@ LRESULT Switcher::Handle(UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(hwnd_, msg, wp, lp);
 }
 
-bool Switcher::EnsureDevice() {
-    if (dc_) return true;
-    UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
-    if (FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags, nullptr, 0,
-                                 D3D11_SDK_VERSION, d3d_.put(), nullptr, nullptr)) &&
-        FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, flags, nullptr, 0,
-                                 D3D11_SDK_VERSION, d3d_.put(), nullptr, nullptr))) {
+bool Switcher::Make() {
+    if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, d2d_.put()))) return false;
+    auto props = D2D1::RenderTargetProperties(
+        D2D1_RENDER_TARGET_TYPE_SOFTWARE,
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), dpi_, dpi_);
+    if (FAILED(d2d_->CreateDCRenderTarget(&props, target_.put()))) return false;
+    context_ = target_.try_as<ID2D1DeviceContext>();
+    if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+                                   reinterpret_cast<IUnknown**>(dwrite_.put()))) ||
+        FAILED(dwrite_->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+                                         DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                                         kFontSize, L"", font_.put())) ||
+        FAILED(dwrite_->CreateEllipsisTrimmingSign(font_.get(), ellipsis_.put()))) {
         return false;
     }
-    auto dxgi = d3d_.try_as<IDXGIDevice>();
-    if (!dxgi) {
-        DropDevice();
-        return false;
-    }
-    D2D1_FACTORY_OPTIONS factoryOptions{};
-    com_ptr<ID2D1Device> device;
-    com_ptr<IDXGIAdapter> adapter;
-    com_ptr<IDXGIFactory2> dxgiFactory;
-    if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1),
-                                 &factoryOptions, d2d_.put_void())) ||
-        FAILED(d2d_->CreateDevice(dxgi.get(), device.put())) ||
-        FAILED(device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, dc_.put())) ||
-        FAILED(dxgi->GetAdapter(adapter.put())) ||
-        FAILED(adapter->GetParent(IID_PPV_ARGS(dxgiFactory.put())))) {
-        DropDevice();
-        return false;
-    }
-    DXGI_SWAP_CHAIN_DESC1 desc{};
-    desc.Width = desc.Height = 8;
-    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-    desc.SampleDesc.Count = 1;
-    desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    desc.BufferCount = 2;
-    desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-    desc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
-    if (FAILED(dxgiFactory->CreateSwapChainForComposition(d3d_.get(), &desc, nullptr,
-                                                          chain_.put())) ||
-        FAILED(DCompositionCreateDevice(dxgi.get(), IID_PPV_ARGS(comp_.put()))) ||
-        FAILED(comp_->CreateTargetForHwnd(hwnd_, TRUE, target_.put())) ||
-        FAILED(comp_->CreateVisual(visual_.put())) ||
-        FAILED(visual_->SetContent(chain_.get())) || FAILED(target_->SetRoot(visual_.get())) ||
-        FAILED(comp_->Commit())) {
-        DropDevice();
-        return false;
-    }
-    width_ = height_ = 8;
-    if (!dwrite_) {
-        if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-                                       reinterpret_cast<IUnknown**>(dwrite_.put()))) ||
-            FAILED(dwrite_->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-                                             DWRITE_FONT_STYLE_NORMAL,
-                                             DWRITE_FONT_STRETCH_NORMAL, kFontSize, L"",
-                                             font_.put())) ||
-            FAILED(dwrite_->CreateEllipsisTrimmingSign(font_.get(), ellipsis_.put()))) {
-            dwrite_ = nullptr;
-            DropDevice();
-            return false;
-        }
-        font_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-        font_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        font_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-        DWRITE_TRIMMING trimming{DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0};
-        font_->SetTrimming(&trimming, ellipsis_.get());
-    }
-    if (!wic_ && FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
-                                         IID_PPV_ARGS(wic_.put())))) {
-        DropDevice();
-        return false;
-    }
-    return true;
+    font_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+    font_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+    font_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+    DWRITE_TRIMMING trimming{DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0};
+    font_->SetTrimming(&trimming, ellipsis_.get());
+    return SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                      IID_PPV_ARGS(wic_.put())));
 }
 
-void Switcher::DropDevice() {
-    cache_.clear();
+void Switcher::Free() {
     for (auto& e : entries_) e.icon = nullptr;
-    visual_ = nullptr;
+    icons_.clear();
+    context_ = nullptr;
     target_ = nullptr;
-    comp_ = nullptr;
-    chain_ = nullptr;
-    dc_ = nullptr;
     d2d_ = nullptr;
-    d3d_ = nullptr;
-    width_ = height_ = 0;
+    ellipsis_ = nullptr;
+    font_ = nullptr;
+    dwrite_ = nullptr;
+    wic_ = nullptr;
 }
 
 com_ptr<ID2D1Bitmap> Switcher::FromIcon(HICON icon) {
@@ -700,8 +614,7 @@ com_ptr<ID2D1Bitmap> Switcher::FromIcon(HICON icon) {
         SUCCEEDED(converter->Initialize(source.get(), GUID_WICPixelFormat32bppPBGRA,
                                         WICBitmapDitherTypeNone, nullptr, 0,
                                         WICBitmapPaletteTypeCustom))) {
-        static_cast<ID2D1RenderTarget*>(dc_.get())
-            ->CreateBitmapFromWicBitmap(converter.get(), nullptr, bitmap.put());
+        target_->CreateBitmapFromWicBitmap(converter.get(), nullptr, bitmap.put());
     }
     return bitmap;
 }
@@ -716,8 +629,7 @@ com_ptr<ID2D1Bitmap> Switcher::FromBitmap(HBITMAP hbitmap) {
         SUCCEEDED(converter->Initialize(source.get(), GUID_WICPixelFormat32bppPBGRA,
                                         WICBitmapDitherTypeNone, nullptr, 0,
                                         WICBitmapPaletteTypeCustom))) {
-        static_cast<ID2D1RenderTarget*>(dc_.get())
-            ->CreateBitmapFromWicBitmap(converter.get(), nullptr, bitmap.put());
+        target_->CreateBitmapFromWicBitmap(converter.get(), nullptr, bitmap.put());
     }
     return bitmap;
 }
@@ -736,15 +648,14 @@ HICON LoadIconLocation(const std::wstring& location, int px) {
 
 com_ptr<ID2D1Bitmap> Switcher::IconFor(HWND w) {
     int px = static_cast<int>(std::lround(options_.iconSize * dpi_ / 96));
-    auto cached = [&](std::wstring key, auto&& make) -> com_ptr<ID2D1Bitmap> {
-        key += L'|' + std::to_wstring(px);
-        if (auto it = cache_.find(key); it != cache_.end()) return it->second;
+    auto shared = [&](std::wstring key, auto&& make) -> com_ptr<ID2D1Bitmap> {
+        if (auto it = icons_.find(key); it != icons_.end()) return it->second;
         com_ptr<ID2D1Bitmap> bitmap = make();
-        if (bitmap) cache_.emplace(std::move(key), bitmap);
+        if (bitmap) icons_.emplace(std::move(key), bitmap);
         return bitmap;
     };
     auto fromLocation = [&](const std::wstring& location) {
-        return cached(L"icon:" + location, [&] {
+        return shared(L"icon:" + location, [&] {
             com_ptr<ID2D1Bitmap> bitmap;
             if (HICON icon = LoadIconLocation(location, px)) {
                 bitmap = FromIcon(icon);
@@ -766,7 +677,7 @@ com_ptr<ID2D1Bitmap> Switcher::IconFor(HWND w) {
     }
     if (aumid.empty()) aumid = WindowProperty(w, kAppUserModelId);
     if (!aumid.empty() && aumid.find(L'!') != std::wstring::npos) {
-        auto bitmap = cached(L"app:" + aumid, [&] {
+        auto bitmap = shared(L"app:" + aumid, [&] {
             com_ptr<ID2D1Bitmap> result;
             com_ptr<IShellItemImageFactory> factory;
             HBITMAP hbitmap = nullptr;
@@ -790,10 +701,11 @@ com_ptr<ID2D1Bitmap> Switcher::IconFor(HWND w) {
         if (auto bitmap = fromLocation(exe + L",0")) return bitmap;
     }
     if (own) return FromIcon(own);
-    return cached(L"default", [&] { return FromIcon(LoadIconW(nullptr, IDI_APPLICATION)); });
+    return shared(L"default", [&] { return FromIcon(LoadIconW(nullptr, IDI_APPLICATION)); });
 }
 
-void Switcher::Layout(HMONITOR monitor) {
+// Sizes the panel for the entries on the monitor and centers it in the work area.
+RECT Switcher::Layout(HMONITOR monitor) {
     UINT dx = 96, dy = 96;
     GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &dx, &dy);
     dpi_ = static_cast<float>(dx);
@@ -820,18 +732,37 @@ void Switcher::Layout(HMONITOR monitor) {
     rows = std::min(rows, maxRows);
     perPage_ = cols_ * rows;
 
-    float w = 2 * kPanelPad + cols_ * cellW_ + (cols_ - 1) * kGap;
-    float h = 2 * kPanelPad + rows * cellH_ + (rows - 1) * kGap + footer_;
-    width_ = static_cast<UINT>(std::lround(w * scale));
-    height_ = static_cast<UINT>(std::lround(h * scale));
-    int x = work.left + (work.right - work.left - static_cast<int>(width_)) / 2;
-    int y = work.top + (work.bottom - work.top - static_cast<int>(height_)) / 2;
-    SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width_, height_, SWP_NOACTIVATE);
-    dc_->SetTarget(nullptr);
-    chain_->ResizeBuffers(2, width_, height_, DXGI_FORMAT_UNKNOWN, 0);
+    width_ = 2 * kPanelPad + cols_ * cellW_ + (cols_ - 1) * kGap;
+    height_ = 2 * kPanelPad + rows * cellH_ + (rows - 1) * kGap + footer_;
+    int w = static_cast<int>(std::lround(width_ * scale));
+    int h = static_cast<int>(std::lround(height_ * scale));
+    int x = work.left + (work.right - work.left - w) / 2;
+    int y = work.top + (work.bottom - work.top - h) / 2;
+    return {x, y, x + w, y + h};
+}
+
+// Puts the selected entry's page in the cells.
+void Switcher::PlaceCells() {
+    int count = static_cast<int>(entries_.size());
+    first_ = selected_ / perPage_ * perPage_;
+    int shown = std::min(perPage_, count - first_);
+    cells_.clear();
+    for (int i = 0; i < shown; i++) {
+        int row = i / cols_, col = i % cols_;
+        // A short last row sits in the middle.
+        int inRow = std::min(cols_, shown - row * cols_);
+        float x = kPanelPad + (cols_ - inRow) * (cellW_ + kGap) / 2 + col * (cellW_ + kGap);
+        float y = kPanelPad + row * (cellH_ + kGap);
+        cells_.push_back(D2D1::RectF(x, y, x + cellW_, y + cellH_));
+    }
 }
 
 void Switcher::ApplyBackdrop() {
+    BOOL noAnimation = TRUE;
+    DwmSetWindowAttribute(hwnd_, DWMWA_TRANSITIONS_FORCEDISABLED, &noAnimation,
+                          sizeof(noAnimation));
+    DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUND;
+    DwmSetWindowAttribute(hwnd_, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
     BOOL dark = look_.dark;
     DwmSetWindowAttribute(hwnd_, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
     COLORREF border = look_.border;
@@ -847,35 +778,39 @@ void Switcher::ApplyBackdrop() {
     DwmExtendFrameIntoClientArea(hwnd_, &margins);
 }
 
-void Switcher::Draw() {
-    if (!shown_ || !dc_) return;
-    com_ptr<IDXGISurface> surface;
-    com_ptr<ID2D1Bitmap1> target;
-    D2D1_BITMAP_PROPERTIES1 props = D2D1::BitmapProperties1(
-        D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), dpi_,
-        dpi_);
-    if (FAILED(chain_->GetBuffer(0, IID_PPV_ARGS(surface.put()))) ||
-        FAILED(dc_->CreateBitmapFromDxgiSurface(surface.get(), &props, target.put()))) {
-        return;
+// Draws through a buffered paint, which keeps the alpha the acrylic shows through.
+void Switcher::Paint() {
+    PAINTSTRUCT ps;
+    HDC hdc = BeginPaint(hwnd_, &ps);
+    RECT rc;
+    GetClientRect(hwnd_, &rc);
+    BP_PAINTPARAMS params{sizeof(params), BPPF_ERASE, nullptr, nullptr};
+    HDC buffer = nullptr;
+    if (HPAINTBUFFER paint = BeginBufferedPaint(hdc, &rc, BPBF_TOPDOWNDIB, &params, &buffer)) {
+        if (target_ && SUCCEEDED(target_->BindDC(buffer, &rc))) Draw();
+        EndBufferedPaint(paint, TRUE);
     }
-    dc_->SetTarget(target.get());
-    dc_->BeginDraw();
+    EndPaint(hwnd_, &ps);
+}
+
+void Switcher::Draw() {
+    target_->BeginDraw();
     uint32_t ground = glass_ ? (look_.solid & 0x00FFFFFF) | (kGlassAlpha << 24) : look_.solid;
-    dc_->Clear(Color(ground));
-    dc_->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
+    target_->Clear(Color(ground));
+    target_->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
 
     com_ptr<ID2D1SolidColorBrush> brush;
-    dc_->CreateSolidColorBrush(Color(look_.text), brush.put());
+    target_->CreateSolidColorBrush(Color(look_.text), brush.put());
     float icon = static_cast<float>(options_.iconSize);
     for (size_t i = 0; i < cells_.size(); i++) {
         int index = first_ + static_cast<int>(i);
         const D2D1_RECT_F& cell = cells_[i];
         Entry& e = entries_[index];
+        // The chosen window: a fill and an accent outline all round, as Bloom marks what is on.
         if (index == selected_ || index == hover_) {
             auto shape = Squircle(d2d_.get(), cell, kRadius);
             brush->SetColor(Color(index == selected_ ? look_.selected : look_.hover));
-            if (shape) dc_->FillGeometry(shape.get(), brush.get());
+            if (shape) target_->FillGeometry(shape.get(), brush.get());
             if (index == selected_) {
                 float in = kRing / 2;
                 auto ring = Squircle(
@@ -883,65 +818,77 @@ void Switcher::Draw() {
                     {cell.left + in, cell.top + in, cell.right - in, cell.bottom - in},
                     kRadius - in);
                 brush->SetColor(Color(look_.accent));
-                if (ring) dc_->DrawGeometry(ring.get(), brush.get(), kRing);
+                if (ring) target_->DrawGeometry(ring.get(), brush.get(), kRing);
             }
         }
         if (!e.icon) e.icon = IconFor(e.hwnd);
         float left = (cell.left + cell.right - icon) / 2, top = cell.top + kItemPad;
         if (e.icon) {
             D2D1_RECT_F dest{left, top, left + icon, top + icon};
-            dc_->DrawBitmap(e.icon.get(), &dest, 1.f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC,
-                            nullptr, nullptr);
+            if (context_) {
+                context_->DrawBitmap(e.icon.get(), &dest, 1.f,
+                                     D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, nullptr, nullptr);
+            } else {
+                target_->DrawBitmap(e.icon.get(), &dest, 1.f,
+                                    D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, nullptr);
+            }
         }
         if (options_.titles == Titles::all) {
             brush->SetColor(Color(look_.text));
             float y = top + icon + kTitleGap;
             D2D1_RECT_F line{cell.left + 6, y, cell.right - 6, y + kLineHeight};
-            dc_->DrawText(e.title.c_str(), static_cast<UINT32>(e.title.size()), font_.get(),
-                          &line, brush.get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+            target_->DrawText(e.title.c_str(), static_cast<UINT32>(e.title.size()), font_.get(),
+                              &line, brush.get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
         }
     }
     if (options_.titles == Titles::selected) {
         const auto& title = entries_[selected_].title;
-        float scale = dpi_ / 96, w = width_ / scale, h = height_ / scale;
-        float y = h - kPanelPad - kLineHeight - 2;
+        float y = height_ - kPanelPad - kLineHeight - 2;
         brush->SetColor(Color(look_.text));
-        D2D1_RECT_F line{kPanelPad + 8, y, w - kPanelPad - 8, y + kLineHeight};
-        dc_->DrawText(title.c_str(), static_cast<UINT32>(title.size()), font_.get(), &line,
-                      brush.get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+        D2D1_RECT_F line{kPanelPad + 8, y, width_ - kPanelPad - 8, y + kLineHeight};
+        target_->DrawText(title.c_str(), static_cast<UINT32>(title.size()), font_.get(), &line,
+                          brush.get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
     }
-    HRESULT hr = dc_->EndDraw();
-    dc_->SetTarget(nullptr);
-    if (hr == D2DERR_RECREATE_TARGET) {
-        DropDevice();
-        return;
+    if (target_->EndDraw() == D2DERR_RECREATE_TARGET) {
+        // A software target should never lose its device; drop the icons drawn on it.
+        for (auto& e : entries_) e.icon = nullptr;
+        icons_.clear();
     }
-    chain_->Present(1, 0);
 }
 
-// Puts the selected entry's page in the cells.
-void PlaceCells(std::vector<D2D1_RECT_F>& cells, int& first, int selected, int count, int cols,
-                int perPage, float cellW, float cellH) {
-    first = selected / perPage * perPage;
-    int shown = std::min(perPage, count - first);
-    cells.clear();
-    for (int i = 0; i < shown; i++) {
-        int row = i / cols, col = i % cols;
-        // A short last row sits in the middle.
-        int inRow = std::min(cols, shown - row * cols);
-        float x = kPanelPad + (cols - inRow) * (cellW + kGap) / 2 + col * (cellW + kGap);
-        float y = kPanelPad + row * (cellH + kGap);
-        cells.push_back(D2D1::RectF(x, y, x + cellW, y + cellH));
-    }
+// Makes everything for one opening and shows the panel cloaked, without activating it.
+bool Switcher::Open() {
+    look_ = DarkTheme(options_.theme) ? kDark : kLight;
+    HMONITOR monitor = GetAltTabTargetMonitor();
+    if (!monitor) monitor = MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
+    RECT r = Layout(monitor);
+    PlaceCells();
+    if (!Make()) return false;
+    HINSTANCE module = reinterpret_cast<HINSTANCE>(&__ImageBase);
+    WNDCLASSEXW wc{sizeof(wc)};
+    wc.lpfnWndProc = Proc;
+    wc.hInstance = module;
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.lpszClassName = kClassName;
+    RegisterClassExW(&wc);  // fails harmlessly when it is there from the last opening
+    hwnd_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST, kClassName, L"", WS_POPUP, r.left,
+                            r.top, r.right - r.left, r.bottom - r.top, nullptr, nullptr, module,
+                            this);
+    if (!hwnd_) return false;
+    ApplyBackdrop();
+    // Hidden from the screen until its first frame is there.
+    BOOL cloak = TRUE;
+    DwmSetWindowAttribute(hwnd_, DWMWA_CLOAK, &cloak, sizeof(cloak));
+    ShowWindow(hwnd_, SW_SHOWNA);
+    UpdateWindow(hwnd_);
+    return true;
 }
 
 void Switcher::Start(bool back, bool win) {
-    if (shown_) return;
+    if (hwnd_) return;
     options_ = CurrentOptions();
-    look_ = DarkTheme(options_.theme) ? kDark : kLight;
-    entries_ = ListWindows(win, hwnd_);
-    if (entries_.empty() || !EnsureDevice()) {
-        entries_.clear();
+    entries_ = ListWindows(win, nullptr);
+    if (entries_.empty()) {
         g_active = false;
         return;
     }
@@ -953,29 +900,17 @@ void Switcher::Start(bool back, bool win) {
     hover_ = -1;
     before_ = front;
 
-    // Alt already up: a quick Alt+Tab switches without showing anything.
+    // Alt already up: a quick Alt+Tab switches without making anything.
     if (GetAsyncKeyState(VK_MENU) >= 0) {
-        shown_ = true;
-        Commit(selected_);
+        Activate(entries_[selected_].hwnd, true);
+        Close();
         return;
     }
-
-    HMONITOR monitor = GetAltTabTargetMonitor();
-    if (!monitor) monitor = MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
-    Layout(monitor);
-    PlaceCells(cells_, first_, selected_, n, cols_, perPage_, cellW_, cellH_);
-    ApplyBackdrop();
-    shown_ = true;
-    Draw();
-    if (!dc_) {  // the device went away while drawing
-        Hide();
+    if (!Open()) {
+        Close();
         return;
     }
-    // Hidden from the screen until its first frame is there, then active, as the acrylic
-    // draws only on an active window.
-    BOOL cloak = TRUE;
-    DwmSetWindowAttribute(hwnd_, DWMWA_CLOAK, &cloak, sizeof(cloak));
-    ShowWindow(hwnd_, SW_SHOW);
+    // Active, as Windows' switcher is: the acrylic draws only on an active window.
     Activate(hwnd_, false);
     SetTimer(hwnd_, kRevealTimer, 30, nullptr);
     SetTimer(hwnd_, kAltTimer, 50, nullptr);
@@ -985,36 +920,36 @@ void Switcher::Step(int delta) {
     int n = static_cast<int>(entries_.size());
     selected_ = ((selected_ + delta) % n + n) % n;
     if (selected_ < first_ || selected_ >= first_ + static_cast<int>(cells_.size())) {
-        PlaceCells(cells_, first_, selected_, n, cols_, perPage_, cellW_, cellH_);
+        PlaceCells();
     }
-    Draw();
+    InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
+// index < 0: the selected one.
 void Switcher::Commit(int index) {
-    HWND target = entries_[index].hwnd;
+    HWND target = entries_[index < 0 ? selected_ : index].hwnd;
     switching_ = true;
     if (IsWindow(target)) Activate(target, true);
-    Hide();
-    switching_ = false;
+    Close();
 }
 
 void Switcher::Cancel() {
     switching_ = true;
     if (before_ && IsWindow(before_)) Activate(before_, false);
-    Hide();
-    switching_ = false;
+    Close();
 }
 
-void Switcher::Hide() {
-    KillTimer(hwnd_, kRevealTimer);
-    KillTimer(hwnd_, kAltTimer);
-    if (IsWindowVisible(hwnd_)) ShowWindow(hwnd_, SW_HIDE);
-    BOOL cloak = FALSE;
-    DwmSetWindowAttribute(hwnd_, DWMWA_CLOAK, &cloak, sizeof(cloak));
-    shown_ = false;
-    entries_.clear();
-    cells_.clear();
+// Lets go of everything the opening made.
+void Switcher::Close() {
+    if (HWND w = hwnd_) {
+        hwnd_ = nullptr;  // the window's last messages go to DefWindowProc
+        DestroyWindow(w);  // its timers go with it
+    }
+    Free();
+    std::vector<Entry>().swap(entries_);
+    std::vector<D2D1_RECT_F>().swap(cells_);
     before_ = nullptr;
+    switching_ = false;
     g_active = false;
 }
 
@@ -1032,16 +967,15 @@ int Switcher::HitTest(LPARAM lp) const {
 
 // ---- threads ---------------------------------------------------------------------------
 
-// The switcher's window lives on its own thread; the hook on another, so that listing
-// windows and loading icons never holds up the keyboard.
+// The switcher runs on a thread of its own and the hook on another, so that listing
+// windows and loading icons never holds up the keyboard. While the switcher is closed
+// both threads only wait for messages.
 HANDLE g_uiThread, g_hookThread;
-DWORD g_hookThreadId;
-std::atomic<HWND> g_window{nullptr};
-HANDLE g_uiReady, g_hookReady;
-constexpr UINT kStopUi = WM_APP + 100;
+DWORD g_uiThreadId, g_hookThreadId;
+HANDLE g_ready;
 
 void Post(UINT msg, WPARAM wp = 0, LPARAM lp = 0) {
-    if (HWND w = g_window) PostMessageW(w, msg, wp, lp);
+    if (DWORD id = g_uiThreadId) PostThreadMessageW(id, msg, wp, lp);
 }
 
 bool Down(int vk) {
@@ -1053,7 +987,7 @@ bool OnKey(WPARAM msg, const KBDLLHOOKSTRUCT& k) {
     bool down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
     if (k.vkCode == VK_TAB && down) {
         if (!g_active) {
-            if (!Down(VK_MENU) || Down(VK_CONTROL) || !g_window) return false;
+            if (!Down(VK_MENU) || Down(VK_CONTROL) || !g_uiThreadId) return false;
             g_active = true;
             Post(kStart, Down(VK_SHIFT), Down(VK_LWIN) || Down(VK_RWIN));
             return true;
@@ -1101,7 +1035,7 @@ DWORD WINAPI HookThread(void*) {
     if (!hook) Wh_Log(L"keyboard hook failed: %u", GetLastError());
     MSG msg;
     PeekMessageW(&msg, nullptr, 0, 0, PM_NOREMOVE);  // the queue Stop posts to
-    SetEvent(g_hookReady);
+    SetEvent(g_ready);
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
     }
     if (hook) UnhookWindowsHookEx(hook);
@@ -1111,55 +1045,73 @@ DWORD WINAPI HookThread(void*) {
 DWORD WINAPI UiThread(void*) {
     SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    BufferedPaintInit();
     Switcher switcher;
-    if (switcher.Create()) g_window = switcher.Hwnd();
-    SetEvent(g_uiReady);
-    if (g_window) {
-        MSG msg;
-        while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
-            if (msg.message == kStopUi) break;
+    MSG msg;
+    PeekMessageW(&msg, nullptr, 0, 0, PM_NOREMOVE);  // the queue the hook posts to
+    SetEvent(g_ready);
+    while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+        if (msg.hwnd) {
             DispatchMessageW(&msg);
+            continue;
+        }
+        if (msg.message == kStopUi) break;
+        switch (msg.message) {
+            case kStart:
+                switcher.Start(msg.wParam != 0, msg.lParam != 0);
+                break;
+            case kStep:
+                if (switcher.IsOpen()) {
+                    switcher.Step(static_cast<int>(msg.wParam) *
+                                  (msg.lParam ? switcher.Cols() : 1));
+                }
+                break;
+            case kCommit:
+                if (switcher.IsOpen()) switcher.Commit(-1);
+                break;
+            case kCancel:
+                if (switcher.IsOpen()) switcher.Cancel();
+                break;
         }
     }
-    g_window = nullptr;
-    switcher.Destroy();
+    switcher.Close();
+    UnregisterClassW(kClassName, reinterpret_cast<HINSTANCE>(&__ImageBase));
+    BufferedPaintUnInit();
     g_active = false;
     if (SUCCEEDED(com)) CoUninitialize();
     return 0;
 }
 
+// Starts a thread and waits until its message queue is there.
+HANDLE StartThread(LPTHREAD_START_ROUTINE proc, DWORD* id) {
+    g_ready = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    HANDLE thread = CreateThread(nullptr, 0, proc, nullptr, 0, id);
+    if (thread) WaitForSingleObject(g_ready, 5000);
+    CloseHandle(g_ready);
+    g_ready = nullptr;
+    return thread;
+}
+
+void StopThread(HANDLE& thread, DWORD& id, UINT quit) {
+    if (!thread) return;
+    PostThreadMessageW(id, quit, 0, 0);
+    WaitForSingleObject(thread, 5000);
+    CloseHandle(thread);
+    thread = nullptr;
+    id = 0;
+}
+
 void Stop() {
-    if (g_hookThread) {
-        PostThreadMessageW(g_hookThreadId, WM_QUIT, 0, 0);
-        WaitForSingleObject(g_hookThread, 5000);
-        CloseHandle(g_hookThread);
-        g_hookThread = nullptr;
-    }
-    if (g_uiThread) {
-        PostThreadMessageW(GetThreadId(g_uiThread), kStopUi, 0, 0);
-        WaitForSingleObject(g_uiThread, 5000);
-        CloseHandle(g_uiThread);
-        g_uiThread = nullptr;
-    }
+    StopThread(g_hookThread, g_hookThreadId, WM_QUIT);
+    StopThread(g_uiThread, g_uiThreadId, kStopUi);
 }
 
 void Start() {
     if (g_uiThread) return;
-    g_uiReady = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    g_uiThread = CreateThread(nullptr, 0, UiThread, nullptr, 0, nullptr);
-    if (g_uiThread) WaitForSingleObject(g_uiReady, 5000);
-    CloseHandle(g_uiReady);
-    g_uiReady = nullptr;
-    if (!g_window) {
-        Wh_Log(L"icon switcher window failed");
-        Stop();
-        return;
-    }
-    g_hookReady = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    g_hookThread = CreateThread(nullptr, 0, HookThread, nullptr, 0, &g_hookThreadId);
-    if (g_hookThread) WaitForSingleObject(g_hookReady, 5000);
-    CloseHandle(g_hookReady);
-    g_hookReady = nullptr;
+    DWORD id = 0;
+    g_uiThread = StartThread(UiThread, &id);
+    g_uiThreadId = g_uiThread ? id : 0;
+    if (g_uiThread) g_hookThread = StartThread(HookThread, &g_hookThreadId);
 }
 
 // Runs the switcher while the settings ask for it.
@@ -1170,7 +1122,6 @@ void Apply() {
     ReleaseSRWLockExclusive(&g_optionsLock);
     if (o.icons) {
         Start();
-        Post(kReload);
     } else {
         Stop();
     }

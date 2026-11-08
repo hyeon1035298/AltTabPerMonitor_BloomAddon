@@ -46,7 +46,7 @@ SOFTWARE.
 
 `mod/bloom-alt-tab.wh.cpp` was written for this add-on: the settings in groups for
 Bloom's settings page and the icon switcher. It uses only Windows APIs (Direct2D,
-DirectWrite, DirectComposition, DWM, WIC, the shell) and contains no code from other
+DirectWrite, DWM, WIC, buffered paint, the shell) and contains no code from other
 projects. Its colors and sizes are Bloom's (https://github.com/hyeon1035298/Bloom,
 GPL-3.0-only). The Windhawk mod "Simple Window Switcher" suggested the icon switcher;
 none of its code is used.

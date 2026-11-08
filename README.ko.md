@@ -33,7 +33,7 @@ Bloom 설정 › 애드온 › 모니터별 Alt+Tab 화면에서 바꾸며 바�
 
 ### 아이콘 전환기
 
-탐색기 안의 저수준 키보드 훅으로 Alt+Tab, Alt+Shift+Tab, Win+Alt+Tab을 받습니다. Alt를 누른 채 Tab, Shift+Tab, 화살표로 옮기고, Enter나 스페이스로 바로 넘어가고, Esc로 닫고, 클릭으로 고릅니다. Alt를 떼면 고른 창으로 넘어갑니다. Ctrl+Alt+Tab은 Windows 그대로입니다. 관리자 권한 창이 앞에 있으면 Windows가 탐색기의 훅에 키를 주지 않아 Windows 전환기가 위 설정의 모니터에 뜹니다.
+탐색기 안의 저수준 키보드 훅으로 Alt+Tab, Alt+Shift+Tab, Win+Alt+Tab을 받습니다. Alt를 누른 채 Tab, Shift+Tab, 화살표로 옮기고, Enter나 스페이스로 바로 넘어가고, Esc로 닫고, 클릭으로 고릅니다. Alt를 떼면 고른 창으로 넘어갑니다. Ctrl+Alt+Tab은 Windows 그대로입니다. 전환기의 창, 그리기 자원, 아이콘은 열려 있는 동안만 있고 닫으면 모두 풀며, 닫혀 있을 때는 캐시도 타이머도 없습니다. 관리자 권한 창이 앞에 있으면 Windows가 탐색기의 훅에 키를 주지 않아 Windows 전환기가 위 설정의 모니터에 뜹니다.
 
 ## 빌드
 

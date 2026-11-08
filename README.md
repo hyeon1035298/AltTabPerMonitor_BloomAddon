@@ -51,7 +51,7 @@ Version 1.2.1-3 and earlier read the four monitor keys without the `monitor.` pr
 
 ### The icon switcher
 
-It takes Alt+Tab, Alt+Shift+Tab and Win+Alt+Tab with a low-level keyboard hook in Explorer. While Alt is held, Tab, Shift+Tab and the arrow keys move, Enter or Space switches, Esc closes it, and a click picks a window. Releasing Alt switches to the chosen window. Ctrl+Alt+Tab stays with Windows. While an elevated (administrator) window is in front, Windows does not hand Explorer's hook the keys, so Windows' own switcher appears, on the monitor set above. The accent is Bloom's default rose; it does not follow a color picked in Bloom.
+It takes Alt+Tab, Alt+Shift+Tab and Win+Alt+Tab with a low-level keyboard hook in Explorer. While Alt is held, Tab, Shift+Tab and the arrow keys move, Enter or Space switches, Esc closes it, and a click picks a window. Releasing Alt switches to the chosen window. Ctrl+Alt+Tab stays with Windows. The switcher's window, drawing and icons exist only while it is open and are freed when it closes; while closed it keeps no cache and runs no timer. While an elevated (administrator) window is in front, Windows does not hand Explorer's hook the keys, so Windows' own switcher appears, on the monitor set above. The accent is Bloom's default rose; it does not follow a color picked in Bloom.
 
 ## Build from source
 
