@@ -45,13 +45,13 @@ SOFTWARE.
 ## The add-on's own mod code (GPL-3.0-only)
 
 `mod/bloom-alt-tab.wh.cpp` was written for this add-on: the settings in groups for
-Bloom's settings page and the icon switcher. It uses only Windows APIs (Direct2D,
-DirectWrite, DWM, WIC, buffered paint, the shell, the Windows Runtime's JSON and UI
-settings) and contains no code from other projects. Its colors and sizes are Bloom's
-(https://github.com/hyeon1035298/Bloom, GPL-3.0-only), including the accent presets and
-how a typed accent is lifted for the dark theme, which follow the color picked in
-Bloom's settings. The Windhawk mod "Simple Window Switcher" suggested the icon switcher;
-none of its code is used.
+Bloom's settings page and the add-on's switcher (window previews and icons). It uses
+only Windows APIs (Direct2D, DirectWrite, DWM and its thumbnails, WIC, buffered paint,
+the shell, the Windows Runtime's JSON and UI settings) and contains no code from other
+projects. Its colors and sizes are Bloom's (https://github.com/hyeon1035298/Bloom,
+GPL-3.0-only), including the accent presets and how a typed accent is lifted for the
+dark theme, which follow the color picked in Bloom's settings. The Windhawk mod "Simple
+Window Switcher" suggested the icon switcher; none of its code is used.
 
 ## The add-on runtime and host (GPL-3.0-only)
 

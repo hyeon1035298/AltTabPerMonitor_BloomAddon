@@ -1,19 +1,20 @@
 group:switcher	Switcher
 switcher.style	Look
-switcher.style#about	The icon switcher shows app icons instead of window previews. While an elevated window is in front, Windows' switcher appears
-switcher.style=windows	Windows' switcher (window previews)
+switcher.style#about	The add-on draws the window previews and the icon switcher itself, on a panel in Bloom's look. While an elevated window is in front, Windows' switcher appears
+switcher.style=windows	Windows' switcher
+switcher.style=previews	Window previews
 switcher.style=icons	Icon switcher
-switcher.iconSize	Icon size
-switcher.iconSize#about	In the icon switcher
-switcher.iconSize=small	Small (32)
-switcher.iconSize=medium	Medium (48)
-switcher.iconSize=large	Large (64)
-switcher.iconSize=huge	Huge (96)
+switcher.iconSize	Size
+switcher.iconSize#about	In the window previews and the icon switcher
+switcher.iconSize=small	Small
+switcher.iconSize=medium	Medium
+switcher.iconSize=large	Large
+switcher.iconSize=huge	Huge
 switcher.titles	Window titles
-switcher.titles#about	In the icon switcher
+switcher.titles#about	In the window previews and the icon switcher
 switcher.titles=none	Hidden
-switcher.titles=selected	The chosen window's only (one line under the icons)
-switcher.titles=all	All (under each icon)
+switcher.titles=selected	The chosen window's only
+switcher.titles=all	All
 group:monitor	Monitor
 monitor.altTabLocation	Alt+Tab: monitor it appears on
 monitor.altTabLocation=cursor	The monitor under the cursor
@@ -31,9 +32,9 @@ monitor.winAltTabWindows=allMonitors	The windows on every monitor
 monitor.winAltTabWindows=cursorMonitorExceptPrimary	The windows on the cursor's monitor, every window on the primary one
 group:pill	Look
 pill.theme	Theme
-pill.theme#about	Light or dark for the icon switcher. As a Bloom add-on it follows Bloom's theme
+pill.theme#about	Light or dark for the window previews and the icon switcher. As a Bloom add-on it follows Bloom's theme
 pill.theme=system	Windows' app theme
 pill.theme=dark	Dark
 pill.theme=light	Light
 pill.glass	Glass effect
-pill.glass#about	When on, a little of what is behind shows through the icon switcher's panel; when off, the panel is filled in the theme's color. As a Bloom add-on it follows Bloom's glass effect
+pill.glass#about	When on, a little of what is behind shows through the switcher's panel; when off, the panel is filled in the theme's color. As a Bloom add-on it follows Bloom's glass effect

@@ -4,9 +4,9 @@
 
 With more than one monitor, Windows opens the Alt+Tab switcher on the primary monitor and lists the windows of every monitor. This add-on for the [Bloom](https://github.com/hyeon1035298/Bloom) launcher opens the switcher on the monitor under the mouse cursor and lists only the windows on that monitor. Win+Alt+Tab does the same.
 
-It can also replace Windows' switcher with an icon switcher: app icons instead of window previews, in Bloom's look (its colors and accent, light or dark and glass as Bloom has them, a panel with Bloom's G2 corners), with a choice of icon size and of which window titles to show.
+It can also replace Windows' switcher with one it draws itself, in Bloom's look (its colors and accent, light or dark and glass as Bloom has them, a panel with Bloom's G2 corners): live window previews, or app icons. Both take the same choice of size and of which window titles to show.
 
-The monitor part is the Windhawk mod [Alt+Tab per monitor](https://github.com/ramensoftware/windhawk-mods/blob/main/mods/alt-tab-per-monitor.wh.cpp) by L3r0y and Michael Maltsev, running without Windhawk. `mod/alt-tab-per-monitor.wh.cpp` is the upstream file, unchanged; `mod/bloom-alt-tab.wh.cpp` is this add-on's own code, which includes it, puts its settings in groups for Bloom's settings page and adds the icon switcher. The add-on runtime and host from [PillTaskbar](https://github.com/hyeon1035298/PillTaskbar_BloomAddon) load them into Explorer: the host finds the internal functions the mod hooks, injects a small runtime that provides the Windhawk API the mod uses, and keeps it running.
+The monitor part is the Windhawk mod [Alt+Tab per monitor](https://github.com/ramensoftware/windhawk-mods/blob/main/mods/alt-tab-per-monitor.wh.cpp) by L3r0y and Michael Maltsev, running without Windhawk. `mod/alt-tab-per-monitor.wh.cpp` is the upstream file, unchanged; `mod/bloom-alt-tab.wh.cpp` is this add-on's own code, which includes it, puts its settings in groups for Bloom's settings page and adds the add-on's own switcher. The add-on runtime and host from [PillTaskbar](https://github.com/hyeon1035298/PillTaskbar_BloomAddon) load them into Explorer: the host finds the internal functions the mod hooks, injects a small runtime that provides the Windhawk API the mod uses, and keeps it running.
 
 ## Requirements
 
@@ -37,21 +37,21 @@ The settings are on the add-on's page in Bloom (Settings › Add-ons › Alt+Tab
 
 | Key | Built-in | Other values |
 |---|---|---|
-| `switcher.style` | `windows` | `icons` |
-| `switcher.iconSize` | `medium` (48) | `small` (32), `large` (64), `huge` (96) |
+| `switcher.style` | `windows` | `previews`, `icons` |
+| `switcher.iconSize` | `medium` | `small`, `large`, `huge` |
 | `switcher.titles` | `selected` | `none`, `all` |
 | `monitor.altTabLocation` | `cursor` | `primary` |
 | `monitor.altTabWindows` | `cursorMonitor` | `allMonitors`, `cursorMonitorExceptPrimary` |
 | `monitor.winAltTabLocation` | `cursor` | `primary` |
 | `monitor.winAltTabWindows` | `cursorMonitor` | `allMonitors`, `cursorMonitorExceptPrimary` |
 
-`switcher.style` picks Windows' switcher with window previews or the icon switcher. The other two `switcher` keys shape the icon switcher; `titles` shows no titles, the chosen window's title under the icons, or a title under every icon. `Location` picks the monitor the switcher appears on. `Windows` picks which windows it lists; `cursorMonitorExceptPrimary` lists every window while the cursor is on the primary monitor. The two `winAltTab` keys apply to Win+Alt+Tab. The built-in values differ from the Windhawk mod's own defaults only in that Win+Alt+Tab also follows the cursor. The icon switcher's theme and glass follow Bloom's (`pill.theme` and `pill.glass`, which Bloom sets).
+`switcher.style` picks Windows' switcher, the add-on's window previews or its icon switcher. The other two `switcher` keys apply to both of the add-on's styles. `iconSize` sets icons of 32, 48, 64 or 96 pixels, or previews 104, 144, 192 or 256 pixels high. `titles` shows no titles, only the chosen window's (under the icons, or above its preview) or every window's. `Location` picks the monitor the switcher appears on. `Windows` picks which windows it lists; `cursorMonitorExceptPrimary` lists every window while the cursor is on the primary monitor. The two `winAltTab` keys apply to Win+Alt+Tab. The built-in values differ from the Windhawk mod's own defaults only in that Win+Alt+Tab also follows the cursor. The theme and glass of both styles follow Bloom's (`pill.theme` and `pill.glass`, which Bloom sets).
 
 Version 1.2.1-3 and earlier read the four monitor keys without the `monitor.` prefix; set them again on the page after updating.
 
-### The icon switcher
+### The add-on's switcher
 
-It takes Alt+Tab, Alt+Shift+Tab and Win+Alt+Tab with a low-level keyboard hook in Explorer. While Alt is held, Tab, Shift+Tab and the arrow keys move, Enter or Space switches, Esc closes it, and a click picks a window. Releasing Alt switches to the chosen window. Ctrl+Alt+Tab stays with Windows. The switcher's window, drawing and icons exist only while it is open and are freed when it closes; while closed it keeps no cache and runs no timer. While an elevated (administrator) window is in front, Windows does not hand Explorer's hook the keys, so Windows' own switcher appears, on the monitor set above. The accent is the one picked in Bloom (Settings › General › Look › Color), read from Bloom's `settings.json` with Bloom's own light and dark pair; a change shows from the next Alt+Tab. Without Bloom's settings the Windows accent is used.
+With `previews` or `icons` it takes Alt+Tab, Alt+Shift+Tab and Win+Alt+Tab with a low-level keyboard hook in Explorer. While Alt is held, Tab, Shift+Tab and the arrow keys move, Enter or Space switches, Esc closes it, and a click picks a window. Releasing Alt switches to the chosen window. Ctrl+Alt+Tab stays with Windows. Both draw their own panel with Bloom's G2 corners on a see-through window; with glass on, a little of what is behind shows through it. The previews are DWM thumbnails, live images that Windows draws, so their corners stay square; a window that gives no thumbnail (some minimized ones) shows its icon instead. The chosen window has a fill and an outline in the accent color. The switcher's window, drawing and icons exist only while it is open and are freed when it closes; while closed it keeps no cache and runs no timer. While an elevated (administrator) window is in front, Windows does not hand Explorer's hook the keys, so Windows' own switcher appears, on the monitor set above. The accent is the one picked in Bloom (Settings › General › Look › Color), read from Bloom's `settings.json` with Bloom's own light and dark pair; a change shows from the next Alt+Tab. Without Bloom's settings the Windows accent is used.
 
 ## Build from source
 
