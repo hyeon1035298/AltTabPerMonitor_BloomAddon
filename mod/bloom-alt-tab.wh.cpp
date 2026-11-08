@@ -6,7 +6,7 @@
 // @version         1.2.1
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lole32 -loleaut32 -lversion -ld2d1 -ldwmapi -ldwrite -lgdi32 -lshcore -lshell32 -lshlwapi -luuid -luxtheme -lwindowscodecs
+// @compilerOptions -lole32 -loleaut32 -lversion -ld2d1 -ldwmapi -ldwrite -lgdi32 -lruntimeobject -lshcore -lshell32 -lshlwapi -luuid -luxtheme -lwindowscodecs
 // ==/WindhawkMod==
 
 // ==WindhawkModSettings==
@@ -104,9 +104,14 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include <winrt/Windows.Data.Json.h>
+#include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.UI.ViewManagement.h>
 
 // Included first so that the renaming below reaches only the mod's own code.
 #include <windhawk_utils.h>
@@ -198,8 +203,9 @@ bool DarkTheme(Theme theme) {
 
 // ---- Bloom's look ---------------------------------------------------------------------
 
-// Bloom's tokens (Ui/Theme/Palette.cs): zinc grays and its default rose accent, used only
-// for what is on (the chosen window).
+// Bloom's tokens (Ui/Theme/Palette.cs): zinc grays, and an accent used only for what is
+// on (the chosen window). The accent here is Bloom's default rose; each opening puts in
+// the one picked in Bloom (CurrentAccent).
 struct Look {
     bool dark;
     uint32_t solid, text, selected, hover, accent;
@@ -209,6 +215,158 @@ constexpr Look kDark{true,       0xFF18181B, 0xFFECEDEE, 0x1AFFFFFF,
                      0x14FFFFFF, 0xFFFF7A9E, RGB(0x35, 0x2E, 0x31)};
 constexpr Look kLight{false,      0xFFF4F4F5, 0xFF11181C, 0x1A111111,
                       0x14111111, 0xFFE04E78, RGB(0xD9, 0xD2, 0xD5)};
+
+// ---- Bloom's accent -------------------------------------------------------------------
+
+// Bloom keeps its accent in its settings.json ("accent": a preset, or "custom" with
+// "accentCustom" #RRGGBB, the light theme's color) and does not hand it to add-ons, so it
+// is read from there with Bloom's own pairs, as the Keep Awake add-on reads it. Without
+// Bloom's settings the Windows accent is used.
+struct AccentPair {
+    uint32_t dark, light;
+};
+
+// HSL, as Bloom lifts a typed color for the dark theme.
+void ToHsl(uint32_t argb, double& h, double& s, double& l) {
+    double r = ((argb >> 16) & 0xFF) / 255.0, g = ((argb >> 8) & 0xFF) / 255.0,
+           b = (argb & 0xFF) / 255.0;
+    double hi = std::max({r, g, b}), lo = std::min({r, g, b}), d = hi - lo;
+    l = (hi + lo) / 2;
+    s = d == 0 ? 0 : d / (1 - std::fabs(2 * l - 1));
+    h = d == 0     ? 0
+        : hi == r  ? 60 * std::fmod((g - b) / d + 6, 6)
+        : hi == g  ? 60 * ((b - r) / d + 2)
+                   : 60 * ((r - g) / d + 4);
+}
+
+uint32_t FromHsl(double h, double s, double l) {
+    double c = (1 - std::fabs(2 * l - 1)) * s;
+    double x = c * (1 - std::fabs(std::fmod(h / 60, 2) - 1)), m = l - c / 2;
+    double r = 0, g = 0, b = 0;
+    switch (static_cast<int>(h / 60) % 6) {
+        case 0: r = c, g = x; break;
+        case 1: r = x, g = c; break;
+        case 2: g = c, b = x; break;
+        case 3: g = x, b = c; break;
+        case 4: r = x, b = c; break;
+        default: r = c, b = x; break;
+    }
+    auto byte = [&](double v) {
+        return static_cast<uint32_t>(std::lround(std::clamp(v + m, 0.0, 1.0) * 255));
+    };
+    return 0xFF000000u | byte(r) << 16 | byte(g) << 8 | byte(b);
+}
+
+std::optional<AccentPair> BloomAccent(const std::wstring& key, const std::wstring& custom) {
+    static constexpr struct {
+        PCWSTR key;
+        AccentPair pair;
+    } kPresets[] = {
+        {L"rose", {0xFFFF7A9E, 0xFFE04E78}},      {L"lavender", {0xFFB49CFF, 0xFF7B5BDB}},
+        {L"sky", {0xFF72B6FF, 0xFF2F72D6}},       {L"mint", {0xFF5ED3AE, 0xFF168F6C}},
+        {L"tangerine", {0xFFFF9B5E, 0xFFD9652A}}, {L"lemon", {0xFFEDC94F, 0xFFA87C00}},
+        {L"gray", {0xFFE4E4E4, 0xFF2E2E2E}},
+    };
+    if (key == L"custom") {
+        std::wstring t = custom;
+        if (!t.empty() && t[0] == L'#') t.erase(0, 1);
+        if (t.size() != 6 || t.find_first_not_of(L"0123456789abcdefABCDEF") != std::wstring::npos) {
+            return std::nullopt;
+        }
+        uint32_t light = 0xFF000000u | static_cast<uint32_t>(wcstoul(t.c_str(), nullptr, 16));
+        double h, s, l;
+        ToHsl(light, h, s, l);
+        return AccentPair{FromHsl(h, s, std::max(l, std::min(0.86, l + 0.18))), light};
+    }
+    for (const auto& p : kPresets) {
+        if (key == p.key) return p.pair;
+    }
+    return std::nullopt;
+}
+
+std::wstring BloomSettingsPath() {
+    PWSTR folder = nullptr;
+    std::wstring path;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &folder))) {
+        path = std::wstring(folder) + L"\\Bloom\\settings.json";
+    }
+    CoTaskMemFree(folder);
+    return path;
+}
+
+std::optional<std::wstring> ReadUtf8File(const std::wstring& path, DWORD maxBytes) {
+    HANDLE file = CreateFileW(path.c_str(), GENERIC_READ,
+                              FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                              OPEN_EXISTING, 0, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return std::nullopt;
+    LARGE_INTEGER size{};
+    std::string bytes;
+    DWORD read = 0;
+    bool ok = GetFileSizeEx(file, &size) && size.QuadPart <= maxBytes;
+    if (ok) {
+        bytes.resize(static_cast<size_t>(size.QuadPart));
+        ok = bytes.empty() || (ReadFile(file, bytes.data(), static_cast<DWORD>(bytes.size()),
+                                        &read, nullptr) &&
+                               read == bytes.size());
+    }
+    CloseHandle(file);
+    if (!ok) return std::nullopt;
+    int n = MultiByteToWideChar(CP_UTF8, 0, bytes.data(), static_cast<int>(bytes.size()),
+                                nullptr, 0);
+    std::wstring text(n, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, bytes.data(), static_cast<int>(bytes.size()), text.data(),
+                        n);
+    if (!text.empty() && text[0] == 0xFEFF) text.erase(0, 1);
+    return text;
+}
+
+AccentPair WindowsAccent() {
+    try {
+        using winrt::Windows::UI::ViewManagement::UIColorType;
+        winrt::Windows::UI::ViewManagement::UISettings ui;
+        auto argb = [](winrt::Windows::UI::Color c) {
+            return static_cast<uint32_t>(c.A) << 24 | c.R << 16 | c.G << 8 | c.B;
+        };
+        return {argb(ui.GetColorValue(UIColorType::AccentLight2)),
+                argb(ui.GetColorValue(UIColorType::AccentDark1))};
+    } catch (...) {
+        return {kDark.accent, kLight.accent};
+    }
+}
+
+AccentPair ReadAccent(const std::wstring& path) {
+    if (auto text = ReadUtf8File(path, 4 * 1024 * 1024)) {
+        try {
+            winrt::Windows::Data::Json::JsonObject o{nullptr};
+            if (winrt::Windows::Data::Json::JsonObject::TryParse(*text, o)) {
+                auto key = std::wstring(o.GetNamedString(L"accent", L"rose"));
+                auto custom = std::wstring(o.GetNamedString(L"accentCustom", L""));
+                return BloomAccent(key, custom).value_or(AccentPair{kDark.accent, kLight.accent});
+            }
+        } catch (...) {
+        }
+    }
+    return WindowsAccent();
+}
+
+// The accent for one opening, on the switcher's thread. Bloom's file is read again only
+// when its time changed, so a color picked in Bloom shows from the next Alt+Tab on; all
+// that is kept between openings is the two colors and the file's time.
+AccentPair CurrentAccent() {
+    static FILETIME seen{};
+    static AccentPair accent{kDark.accent, kLight.accent};
+    std::wstring path = BloomSettingsPath();
+    WIN32_FILE_ATTRIBUTE_DATA data{};
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data)) {
+        seen = {};
+        return accent = WindowsAccent();  // no Bloom: follow Windows as it changes
+    }
+    if (CompareFileTime(&data.ftLastWriteTime, &seen) != 0) {
+        seen = data.ftLastWriteTime;
+        accent = ReadAccent(path);
+    }
+    return accent;
+}
 // Over the acrylic the window color shows at 70 % (Bloom's 유리 투명도 default of 30 %).
 constexpr uint32_t kGlassAlpha = 0xB3;
 // The previews have no acrylic behind them; their title plates take the window color at
@@ -1022,6 +1180,8 @@ void Switcher::Draw() {
 // Makes everything for one opening and shows the panel cloaked, without activating it.
 bool Switcher::Open() {
     look_ = DarkTheme(options_.theme) ? kDark : kLight;
+    AccentPair accent = CurrentAccent();
+    look_.accent = look_.dark ? accent.dark : accent.light;
     HMONITOR monitor = GetAltTabTargetMonitor();
     if (!monitor) monitor = MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
     RECT r = Layout(monitor);
