@@ -1,0 +1,406 @@
+{
+  "groups": {
+    "switcher": { "name": { "ko": "전환기 모양", "en": "Switcher look", "ja": "切り替え画面の見た目", "zh": "切换器样式" } },
+    "monitor": { "name": { "ko": "모니터가 여럿일 때", "en": "With several monitors", "ja": "モニターが複数あるとき", "zh": "有多台显示器时" } }
+  },
+  "items": {
+    "switcher.style": {
+      "name": { "ko": "모양", "en": "Look", "ja": "見た目", "zh": "外观" },
+      "about": {
+        "ko": "관리자 권한 창이 앞에 있으면 Windows 모양으로 뜹니다",
+        "en": "With an administrator window in front, Windows' own shows",
+        "ja": "管理者権限のウィンドウが前にあると Windows の表示になります",
+        "zh": "管理员权限的窗口在前台时显示为 Windows 样式"
+      },
+      "options": {
+        "windows": {
+          "name": { "ko": "창 미리 보기", "en": "Window previews", "ja": "ウィンドウのプレビュー", "zh": "窗口预览" },
+          "picture": {
+            "shapes": [
+              { "box": [3, 7, 66, 30], "r": 6, "alpha": 0.18 },
+              { "box": [6.5, 11.5, 19, 21], "r": 3, "stroke": "accent", "width": 1.5 },
+              { "box": [9, 14, 14, 11], "r": 1.5, "alpha": 0.05 },
+              { "box": [9, 14, 14, 11], "r": 1.5, "stroke": "ink", "alpha": 0.45 },
+              { "box": [29, 14, 14, 11], "r": 1.5, "alpha": 0.05 },
+              { "box": [29, 14, 14, 11], "r": 1.5, "stroke": "ink", "alpha": 0.45 },
+              { "box": [49, 14, 14, 11], "r": 1.5, "alpha": 0.05 },
+              { "box": [49, 14, 14, 11], "r": 1.5, "stroke": "ink", "alpha": 0.45 },
+              { "box": [9, 27.5, 10, 2], "r": 1, "alpha": 0.45 },
+              { "box": [29, 27.5, 10, 2], "r": 1, "alpha": 0.45 },
+              { "box": [49, 27.5, 10, 2], "r": 1, "alpha": 0.45 }
+            ]
+          }
+        },
+        "icons": {
+          "name": { "ko": "앱 아이콘", "en": "App icons", "ja": "アプリのアイコン", "zh": "应用图标" },
+          "picture": {
+            "shapes": [
+              { "box": [3, 11, 66, 22], "r": 6, "alpha": 0.18 },
+              { "box": [7.5, 14.5, 15, 15], "r": 3.5, "stroke": "accent", "width": 1.5 },
+              { "box": [10, 17, 10, 10], "r": 2.5, "fill": "accent" },
+              { "box": [24, 17, 10, 10], "r": 2.5, "alpha": 0.45 },
+              { "box": [38, 17, 10, 10], "r": 2.5, "alpha": 0.45 },
+              { "box": [52, 17, 10, 10], "r": 2.5, "alpha": 0.45 }
+            ]
+          }
+        },
+        "previews": { "name": { "ko": "창 미리보기", "en": "Window previews", "ja": "ウィンドウのプレビュー", "zh": "窗口预览" } }
+      }
+    },
+    "switcher.iconSize": {
+      "name": { "ko": "아이콘 크기", "en": "Icon size", "ja": "アイコンのサイズ", "zh": "图标大小" },
+      "about": "",
+      "when": { "key": "switcher.style", "is": "icons" },
+      "options": {
+        "small": {
+          "name": { "ko": "작게", "en": "Small", "ja": "小", "zh": "小" },
+          "picture": {
+            "shapes": [
+              { "box": [6, 10, 60, 24], "r": 5, "alpha": 0.18 },
+              { "box": [24, 19, 6, 6], "r": 1.38, "fill": "accent" },
+              { "box": [33, 19, 6, 6], "r": 1.38, "fill": "accent" },
+              { "box": [42, 19, 6, 6], "r": 1.38, "fill": "accent" }
+            ]
+          }
+        },
+        "medium": {
+          "name": { "ko": "보통", "en": "Medium", "ja": "中", "zh": "中" },
+          "picture": {
+            "shapes": [
+              { "box": [6, 10, 60, 24], "r": 5, "alpha": 0.18 },
+              { "box": [19.5, 17.5, 9, 9], "r": 2.07, "fill": "accent" },
+              { "box": [31.5, 17.5, 9, 9], "r": 2.07, "fill": "accent" },
+              { "box": [43.5, 17.5, 9, 9], "r": 2.07, "fill": "accent" }
+            ]
+          }
+        },
+        "large": {
+          "name": { "ko": "크게", "en": "Large", "ja": "大", "zh": "大" },
+          "picture": {
+            "shapes": [
+              { "box": [6, 10, 60, 24], "r": 5, "alpha": 0.18 },
+              { "box": [15, 16, 12, 12], "r": 2.76, "fill": "accent" },
+              { "box": [30, 16, 12, 12], "r": 2.76, "fill": "accent" },
+              { "box": [45, 16, 12, 12], "r": 2.76, "fill": "accent" }
+            ]
+          }
+        },
+        "huge": {
+          "name": { "ko": "아주 크게", "en": "Huge", "ja": "特大", "zh": "特大" },
+          "picture": {
+            "shapes": [
+              { "box": [6, 10, 60, 24], "r": 5, "alpha": 0.18 },
+              { "box": [10.5, 14.5, 15, 15], "r": 3.45, "fill": "accent" },
+              { "box": [28.5, 14.5, 15, 15], "r": 3.45, "fill": "accent" },
+              { "box": [46.5, 14.5, 15, 15], "r": 3.45, "fill": "accent" }
+            ]
+          }
+        }
+      }
+    },
+    "switcher.titles": {
+      "name": { "ko": "창 이름", "en": "Window names", "ja": "ウィンドウ名", "zh": "窗口名称" },
+      "about": "",
+      "when": { "key": "switcher.style", "is": "icons" },
+      "options": {
+        "none": {
+          "name": { "ko": "안 보임", "en": "None", "ja": "なし", "zh": "无" },
+          "picture": {
+            "shapes": [
+              { "box": [4, 9, 64, 26], "r": 5, "alpha": 0.18 },
+              { "box": [10, 17, 10, 10], "r": 2.5, "fill": "accent" },
+              { "box": [24, 17, 10, 10], "r": 2.5, "alpha": 0.45 },
+              { "box": [38, 17, 10, 10], "r": 2.5, "alpha": 0.45 },
+              { "box": [52, 17, 10, 10], "r": 2.5, "alpha": 0.45 }
+            ]
+          }
+        },
+        "selected": {
+          "name": { "ko": "고른 창만", "en": "The chosen one", "ja": "選んだウィンドウだけ", "zh": "仅选中的窗口" },
+          "picture": {
+            "shapes": [
+              { "box": [4, 9, 64, 26], "r": 5, "alpha": 0.18 },
+              { "box": [10, 13, 10, 10], "r": 2.5, "fill": "accent" },
+              { "box": [24, 13, 10, 10], "r": 2.5, "alpha": 0.45 },
+              { "box": [38, 13, 10, 10], "r": 2.5, "alpha": 0.45 },
+              { "box": [52, 13, 10, 10], "r": 2.5, "alpha": 0.45 },
+              { "box": [7, 27, 16, 2.4], "r": 1.2 }
+            ]
+          }
+        },
+        "all": {
+          "name": { "ko": "모두", "en": "All", "ja": "すべて", "zh": "全部" },
+          "picture": {
+            "shapes": [
+              { "box": [4, 9, 64, 26], "r": 5, "alpha": 0.18 },
+              { "box": [10, 13, 10, 10], "r": 2.5, "fill": "accent" },
+              { "box": [24, 13, 10, 10], "r": 2.5, "alpha": 0.45 },
+              { "box": [38, 13, 10, 10], "r": 2.5, "alpha": 0.45 },
+              { "box": [52, 13, 10, 10], "r": 2.5, "alpha": 0.45 },
+              { "box": [9, 27, 12, 2.4], "r": 1.2 },
+              { "box": [23, 27, 12, 2.4], "r": 1.2 },
+              { "box": [37, 27, 12, 2.4], "r": 1.2 },
+              { "box": [51, 27, 12, 2.4], "r": 1.2 }
+            ]
+          }
+        }
+      }
+    },
+    "monitor.altTabLocation": {
+      "name": { "ko": "Alt+Tab이 뜨는 곳", "en": "Where Alt+Tab shows", "ja": "Alt+Tab が出る場所", "zh": "Alt+Tab 出现的位置" },
+      "about": "",
+      "options": {
+        "cursor": {
+          "name": { "ko": "포인터가 있는 모니터", "en": "The pointer's monitor", "ja": "ポインターのあるモニター", "zh": "指针所在的显示器" },
+          "picture": {
+            "shapes": [
+              { "box": [2, 5, 36, 25], "r": 3, "alpha": 0.05 },
+              { "box": [2, 5, 36, 25], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [16, 31, 8, 2], "r": 1, "alpha": 0.18 },
+              { "text": "1", "at": [7, 10], "width": 8, "size": 6.5, "bold": false, "alpha": 0.6 },
+              { "box": [42, 9, 28, 20], "r": 3, "alpha": 0.05 },
+              { "box": [42, 9, 28, 20], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [52, 30, 8, 2], "r": 1, "alpha": 0.18 },
+              { "text": "2", "at": [47, 14], "width": 8, "size": 6.5, "bold": false, "alpha": 0.6 },
+              { "box": [47, 16, 18, 7], "r": 2, "fill": "accent" },
+              {
+                "path": "M 60,22 v 9 l 2.4,-2.2 1.8,3.6 1.4,-0.7 -1.8,-3.5 h 3.2 z",
+                "fill": "ink",
+                "stroke": "popup",
+                "width": 0.8
+              }
+            ]
+          }
+        },
+        "primary": {
+          "name": { "ko": "주 모니터", "en": "Main monitor", "ja": "メインモニター", "zh": "主显示器" },
+          "picture": {
+            "shapes": [
+              { "box": [2, 5, 36, 25], "r": 3, "alpha": 0.05 },
+              { "box": [2, 5, 36, 25], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [16, 31, 8, 2], "r": 1, "alpha": 0.18 },
+              { "text": "1", "at": [7, 10], "width": 8, "size": 6.5, "bold": false, "alpha": 0.6 },
+              { "box": [42, 9, 28, 20], "r": 3, "alpha": 0.05 },
+              { "box": [42, 9, 28, 20], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [52, 30, 8, 2], "r": 1, "alpha": 0.18 },
+              { "text": "2", "at": [47, 14], "width": 8, "size": 6.5, "bold": false, "alpha": 0.6 },
+              { "box": [9, 14, 22, 7], "r": 2, "fill": "accent" },
+              {
+                "path": "M 60,22 v 9 l 2.4,-2.2 1.8,3.6 1.4,-0.7 -1.8,-3.5 h 3.2 z",
+                "fill": "ink",
+                "stroke": "popup",
+                "width": 0.8
+              }
+            ]
+          }
+        }
+      }
+    },
+    "monitor.altTabWindows": {
+      "name": { "ko": "보일 창", "en": "Windows listed", "ja": "表示するウィンドウ", "zh": "显示的窗口" },
+      "about": {
+        "ko": "강조색 창이 목록에 나옵니다",
+        "en": "The highlighted windows are listed",
+        "ja": "アクセントカラーのウィンドウが一覧に出ます",
+        "zh": "强调色的窗口会出现在列表中"
+      },
+      "options": {
+        "cursorMonitor": {
+          "name": { "ko": "그 모니터 창만", "en": "That monitor's", "ja": "そのモニターのウィンドウだけ", "zh": "仅该显示器的窗口" },
+          "picture": {
+            "shapes": [
+              { "box": [2, 5, 36, 25], "r": 3, "alpha": 0.05 },
+              { "box": [2, 5, 36, 25], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [42, 9, 28, 20], "r": 3, "alpha": 0.05 },
+              { "box": [42, 9, 28, 20], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [6, 9, 13, 9], "r": 1.5, "alpha": 0.45 },
+              { "box": [21, 16, 13, 10], "r": 1.5, "alpha": 0.45 },
+              { "box": [47, 13, 14, 10], "r": 1.5, "fill": "accent" },
+              {
+                "path": "M 60,20 v 9 l 2.4,-2.2 1.8,3.6 1.4,-0.7 -1.8,-3.5 h 3.2 z",
+                "fill": "ink",
+                "stroke": "popup",
+                "width": 0.8
+              }
+            ]
+          }
+        },
+        "allMonitors": {
+          "name": { "ko": "모든 창", "en": "All", "ja": "すべて", "zh": "全部" },
+          "picture": {
+            "shapes": [
+              { "box": [2, 5, 36, 25], "r": 3, "alpha": 0.05 },
+              { "box": [2, 5, 36, 25], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [42, 9, 28, 20], "r": 3, "alpha": 0.05 },
+              { "box": [42, 9, 28, 20], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [6, 9, 13, 9], "r": 1.5, "fill": "accent" },
+              { "box": [21, 16, 13, 10], "r": 1.5, "fill": "accent" },
+              { "box": [47, 13, 14, 10], "r": 1.5, "fill": "accent" },
+              {
+                "path": "M 60,20 v 9 l 2.4,-2.2 1.8,3.6 1.4,-0.7 -1.8,-3.5 h 3.2 z",
+                "fill": "ink",
+                "stroke": "popup",
+                "width": 0.8
+              }
+            ]
+          }
+        },
+        "cursorMonitorExceptPrimary": {
+          "name": { "ko": "주 모니터에선 모두", "en": "All on the main one", "ja": "メインモニターではすべて", "zh": "主显示器上显示全部" },
+          "picture": {
+            "shapes": [
+              { "box": [2, 5, 36, 25], "r": 3, "alpha": 0.05 },
+              { "box": [2, 5, 36, 25], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [42, 9, 28, 20], "r": 3, "alpha": 0.05 },
+              { "box": [42, 9, 28, 20], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [6, 9, 13, 9], "r": 1.5, "fill": "accent" },
+              { "box": [21, 16, 13, 10], "r": 1.5, "fill": "accent" },
+              { "box": [47, 13, 14, 10], "r": 1.5, "alpha": 0.45 },
+              {
+                "text": { "ko": "주 모니터", "en": "Main", "ja": "メイン", "zh": "主显示器" },
+                "at": [20, 38],
+                "width": 36,
+                "size": 6.5,
+                "bold": false,
+                "alpha": 0.75
+              }
+            ]
+          }
+        }
+      }
+    },
+    "monitor.winAltTabLocation": {
+      "name": {
+        "ko": "Win+Alt+Tab이 뜨는 곳",
+        "en": "Where Win+Alt+Tab shows",
+        "ja": "Win+Alt+Tab が出る場所",
+        "zh": "Win+Alt+Tab 出现的位置"
+      },
+      "about": "",
+      "options": {
+        "cursor": {
+          "name": { "ko": "포인터가 있는 모니터", "en": "The pointer's monitor", "ja": "ポインターのあるモニター", "zh": "指针所在的显示器" },
+          "picture": {
+            "shapes": [
+              { "box": [2, 5, 36, 25], "r": 3, "alpha": 0.05 },
+              { "box": [2, 5, 36, 25], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [16, 31, 8, 2], "r": 1, "alpha": 0.18 },
+              { "text": "1", "at": [7, 10], "width": 8, "size": 6.5, "bold": false, "alpha": 0.6 },
+              { "box": [42, 9, 28, 20], "r": 3, "alpha": 0.05 },
+              { "box": [42, 9, 28, 20], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [52, 30, 8, 2], "r": 1, "alpha": 0.18 },
+              { "text": "2", "at": [47, 14], "width": 8, "size": 6.5, "bold": false, "alpha": 0.6 },
+              { "box": [47, 16, 18, 7], "r": 2, "fill": "accent" },
+              {
+                "path": "M 60,22 v 9 l 2.4,-2.2 1.8,3.6 1.4,-0.7 -1.8,-3.5 h 3.2 z",
+                "fill": "ink",
+                "stroke": "popup",
+                "width": 0.8
+              }
+            ]
+          }
+        },
+        "primary": {
+          "name": { "ko": "주 모니터", "en": "Main monitor", "ja": "メインモニター", "zh": "主显示器" },
+          "picture": {
+            "shapes": [
+              { "box": [2, 5, 36, 25], "r": 3, "alpha": 0.05 },
+              { "box": [2, 5, 36, 25], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [16, 31, 8, 2], "r": 1, "alpha": 0.18 },
+              { "text": "1", "at": [7, 10], "width": 8, "size": 6.5, "bold": false, "alpha": 0.6 },
+              { "box": [42, 9, 28, 20], "r": 3, "alpha": 0.05 },
+              { "box": [42, 9, 28, 20], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [52, 30, 8, 2], "r": 1, "alpha": 0.18 },
+              { "text": "2", "at": [47, 14], "width": 8, "size": 6.5, "bold": false, "alpha": 0.6 },
+              { "box": [9, 14, 22, 7], "r": 2, "fill": "accent" },
+              {
+                "path": "M 60,22 v 9 l 2.4,-2.2 1.8,3.6 1.4,-0.7 -1.8,-3.5 h 3.2 z",
+                "fill": "ink",
+                "stroke": "popup",
+                "width": 0.8
+              }
+            ]
+          }
+        }
+      }
+    },
+    "monitor.winAltTabWindows": {
+      "name": {
+        "ko": "Win+Alt+Tab에 보일 창",
+        "en": "Windows Win+Alt+Tab lists",
+        "ja": "Win+Alt+Tab で表示するウィンドウ",
+        "zh": "Win+Alt+Tab 显示的窗口"
+      },
+      "about": {
+        "ko": "강조색 창이 목록에 나옵니다",
+        "en": "The highlighted windows are listed",
+        "ja": "アクセントカラーのウィンドウが一覧に出ます",
+        "zh": "强调色的窗口会出现在列表中"
+      },
+      "options": {
+        "cursorMonitor": {
+          "name": { "ko": "그 모니터 창만", "en": "That monitor's", "ja": "そのモニターのウィンドウだけ", "zh": "仅该显示器的窗口" },
+          "picture": {
+            "shapes": [
+              { "box": [2, 5, 36, 25], "r": 3, "alpha": 0.05 },
+              { "box": [2, 5, 36, 25], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [42, 9, 28, 20], "r": 3, "alpha": 0.05 },
+              { "box": [42, 9, 28, 20], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [6, 9, 13, 9], "r": 1.5, "alpha": 0.45 },
+              { "box": [21, 16, 13, 10], "r": 1.5, "alpha": 0.45 },
+              { "box": [47, 13, 14, 10], "r": 1.5, "fill": "accent" },
+              {
+                "path": "M 60,20 v 9 l 2.4,-2.2 1.8,3.6 1.4,-0.7 -1.8,-3.5 h 3.2 z",
+                "fill": "ink",
+                "stroke": "popup",
+                "width": 0.8
+              }
+            ]
+          }
+        },
+        "allMonitors": {
+          "name": { "ko": "모든 창", "en": "All", "ja": "すべて", "zh": "全部" },
+          "picture": {
+            "shapes": [
+              { "box": [2, 5, 36, 25], "r": 3, "alpha": 0.05 },
+              { "box": [2, 5, 36, 25], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [42, 9, 28, 20], "r": 3, "alpha": 0.05 },
+              { "box": [42, 9, 28, 20], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [6, 9, 13, 9], "r": 1.5, "fill": "accent" },
+              { "box": [21, 16, 13, 10], "r": 1.5, "fill": "accent" },
+              { "box": [47, 13, 14, 10], "r": 1.5, "fill": "accent" },
+              {
+                "path": "M 60,20 v 9 l 2.4,-2.2 1.8,3.6 1.4,-0.7 -1.8,-3.5 h 3.2 z",
+                "fill": "ink",
+                "stroke": "popup",
+                "width": 0.8
+              }
+            ]
+          }
+        },
+        "cursorMonitorExceptPrimary": {
+          "name": { "ko": "주 모니터에선 모두", "en": "All on the main one", "ja": "メインモニターではすべて", "zh": "主显示器上显示全部" },
+          "picture": {
+            "shapes": [
+              { "box": [2, 5, 36, 25], "r": 3, "alpha": 0.05 },
+              { "box": [2, 5, 36, 25], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [42, 9, 28, 20], "r": 3, "alpha": 0.05 },
+              { "box": [42, 9, 28, 20], "r": 3, "stroke": "ink", "alpha": 0.45 },
+              { "box": [6, 9, 13, 9], "r": 1.5, "fill": "accent" },
+              { "box": [21, 16, 13, 10], "r": 1.5, "fill": "accent" },
+              { "box": [47, 13, 14, 10], "r": 1.5, "alpha": 0.45 },
+              {
+                "text": { "ko": "주 모니터", "en": "Main", "ja": "メイン", "zh": "主显示器" },
+                "at": [20, 38],
+                "width": 36,
+                "size": 6.5,
+                "bold": false,
+                "alpha": 0.75
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

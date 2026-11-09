@@ -8,6 +8,7 @@ README.ko.md                     Korean readme
 THIRD_PARTY.md                   the mod's MIT notice and the runtime's credits, shipped in the zip
 addon.conf                       the add-on's names, version and manifest fields
 names-en.tsv                     English text of the settings page
+settings.easy.json               how Bloom's settings page words and draws the settings
 mod/alt-tab-per-monitor.wh.cpp   the Windhawk mod 1.2.1, unchanged (MIT)
 mod/bloom-alt-tab.wh.cpp         the add-on's mod: grouped settings, icon switcher
 build.sh                         builds with PillTaskbar_BloomAddon's tools
