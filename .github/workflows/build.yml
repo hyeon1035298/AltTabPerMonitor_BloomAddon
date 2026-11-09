@@ -79,7 +79,7 @@ jobs:
           mkdir -p "$out"
           cp LICENSE "$out/"
           for f in AltTabPerMonitorHost.exe AltTabPerMonitorRuntime.dll AltTabPerMonitor.dll symbols.txt \
-                   addon.json THIRD_PARTY.md THIRD_PARTY_NOTICES.txt SOURCE.txt; do
+                   settings.schema.json addon.json THIRD_PARTY.md THIRD_PARTY_NOTICES.txt SOURCE.txt; do
             if [ -f "build/addon/$f" ]; then
               cp "build/addon/$f" "$out/"
             elif [ "$f" != SOURCE.txt ]; then
@@ -91,6 +91,17 @@ jobs:
             echo "SOURCE.txt missing on a tag build" >&2
             exit 1
           fi
+          # Bloom refuses the zip unless every file addon.json lists is in it with that SHA-256.
+          python -I - "$out" <<'PY'
+          import hashlib, json, os, sys
+          out = sys.argv[1]
+          files = json.load(open(os.path.join(out, "addon.json"), encoding="utf-8"))["files"]
+          bad = [n for n, h in files.items()
+                 if not os.path.isfile(os.path.join(out, n))
+                 or hashlib.sha256(open(os.path.join(out, n), "rb").read()).hexdigest() != h.lower()]
+          if bad:
+              sys.exit("not staged as addon.json lists: " + ", ".join(bad))
+          PY
           ls -l "$out"
 
       - name: Zip
