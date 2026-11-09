@@ -103,6 +103,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <optional>
 #include <string>
@@ -522,12 +523,19 @@ std::wstring FramedAppId(HWND frame) {
     return id;
 }
 
+// A busy program (an editor in the middle of its work) answers late: both questions share
+// 20 ms, after which its class icon, or its program's, stands in.
 HICON WindowIcon(HWND w) {
+    using namespace std::chrono;
+    auto until = steady_clock::now() + milliseconds(20);
     DWORD_PTR icon = 0;
     for (WPARAM kind : {ICON_BIG, ICON_SMALL2}) {
-        if (SendMessageTimeoutW(w, WM_GETICON, kind, 0, SMTO_ABORTIFHUNG, 100, &icon) && icon) {
-            return reinterpret_cast<HICON>(icon);
+        auto left = duration_cast<milliseconds>(until - steady_clock::now()).count();
+        if (left <= 0 || !SendMessageTimeoutW(w, WM_GETICON, kind, 0, SMTO_ABORTIFHUNG,
+                                              static_cast<UINT>(left), &icon)) {
+            break;
         }
+        if (icon) return reinterpret_cast<HICON>(icon);
     }
     if ((icon = GetClassLongPtrW(w, GCLP_HICON))) return reinterpret_cast<HICON>(icon);
     return reinterpret_cast<HICON>(GetClassLongPtrW(w, GCLP_HICONSM));
@@ -694,7 +702,7 @@ enum : UINT {
     kCancel,
     kStopUi,
 };
-enum : UINT_PTR { kRevealTimer = 1, kAltTimer = 2 };
+enum : UINT_PTR { kAltTimer = 1 };
 constexpr wchar_t kClassName[] = L"AltTabPerMonitor.IconSwitcher";
 
 // Set by the hook thread when it takes a Tab, cleared once the switcher is done.
@@ -719,11 +727,7 @@ LRESULT Switcher::Handle(UINT msg, WPARAM wp, LPARAM lp) {
         case WM_ERASEBKGND:
             return 1;
         case WM_TIMER:
-            if (wp == kRevealTimer) {
-                KillTimer(hwnd_, kRevealTimer);
-                BOOL cloak = FALSE;
-                DwmSetWindowAttribute(hwnd_, DWMWA_CLOAK, &cloak, sizeof(cloak));
-            } else if (wp == kAltTimer && GetAsyncKeyState(VK_MENU) >= 0) {
+            if (wp == kAltTimer && GetAsyncKeyState(VK_MENU) >= 0) {
                 // The hook missed Alt going up (an elevated window took the keys).
                 Commit(-1);
             }
@@ -1161,7 +1165,7 @@ void Switcher::Draw() {
     }
 }
 
-// Makes everything for one opening and shows the panel cloaked, without activating it.
+// Makes everything for one opening and shows the panel once painted, without activating it.
 bool Switcher::Open() {
     look_ = DarkTheme(options_.theme) ? kDark : kLight;
     AccentPair accent = CurrentAccent();
@@ -1189,6 +1193,12 @@ bool Switcher::Open() {
     DwmSetWindowAttribute(hwnd_, DWMWA_CLOAK, &cloak, sizeof(cloak));
     ShowWindow(hwnd_, SW_SHOWNA);
     UpdateWindow(hwnd_);
+    // Painted: out at once, before it is made active, which waits on a busy front window.
+    // Window previews first take a frame of DWM's, else their boxes would show empty for one.
+    GdiFlush();
+    if (!thumbnails_.empty()) DwmFlush();
+    cloak = FALSE;
+    DwmSetWindowAttribute(hwnd_, DWMWA_CLOAK, &cloak, sizeof(cloak));
     return true;
 }
 
@@ -1220,7 +1230,6 @@ void Switcher::Start(bool back, bool win) {
     }
     // Active, as Windows' switcher is, so that it closes when another window takes over.
     Activate(hwnd_, false);
-    SetTimer(hwnd_, kRevealTimer, 30, nullptr);
     SetTimer(hwnd_, kAltTimer, 50, nullptr);
 }
 
