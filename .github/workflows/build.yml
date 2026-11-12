@@ -62,6 +62,12 @@ jobs:
       - name: Build
         run: PILL_ROOT=pill bash build.sh
 
+      # The pure-logic checks (arguments, symbol-meta and port-sources parsing, the porter's
+      # sidecar formats, exit ranking). No explorer and no network; the exit code is the number
+      # of failed checks, so any failure fails the job.
+      - name: Host self-test
+        run: build/addon/AltTabPerMonitorHost.exe --self-test
+
       - name: Write SOURCE.txt
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -78,7 +84,7 @@ jobs:
           out="dist/AltTabPerMonitor_BloomAddon"
           mkdir -p "$out"
           cp LICENSE "$out/"
-          for f in AltTabPerMonitorHost.exe AltTabPerMonitorRuntime.dll AltTabPerMonitor.dll symbols.txt \
+          for f in AltTabPerMonitorHost.exe AltTabPerMonitorRuntime.dll AltTabPerMonitor.dll symbols.txt symbols-meta.txt port-sources.txt \
                    settings.schema.json addon.json THIRD_PARTY.md THIRD_PARTY_NOTICES.txt SOURCE.txt; do
             if [ -f "build/addon/$f" ]; then
               cp "build/addon/$f" "$out/"
