@@ -84,9 +84,10 @@
 // second thread that lists the windows, draws them and switches. While an elevated window
 // is in front the hook gets no keys, and Windows' switcher comes as before. It shows the
 // windows as live previews (DWM thumbnails) or as app icons, on a panel with Bloom's G2
-// corners drawn on a see-through window. The look is Bloom's: its colors and the accent
-// picked in Bloom, Segoe UI. It holds memory only while it is open (see
-// Switcher).
+// corners drawn on a see-through window, in the order they were used. The window under the
+// mouse has a close button. The look is Bloom's: its colors and the accent picked in Bloom,
+// Segoe UI. It holds memory only while it is open (see Switcher), apart from the order of
+// use (g_used).
 
 #include <appmodel.h>
 #include <d2d1_1.h>
@@ -210,12 +211,16 @@ bool DarkTheme(Theme theme) {
 struct Look {
     bool dark;
     uint32_t solid, text, selected, hover, accent;
-    COLORREF border;  // the hairline DWM draws, as Bloom's glass windows have it
+    // The close button: Bloom's button, its edge, and its red, kept for what cannot be
+    // undone, under the mouse; the cross on the red is white in both themes.
+    uint32_t button, edge, danger;
+    COLORREF border;  // the panel's hairline
 };
-constexpr Look kDark{true,       0xFF18181B, 0xFFECEDEE, 0x1AFFFFFF,
-                     0x14FFFFFF, 0xFFFF7A9E, RGB(0x35, 0x2E, 0x31)};
-constexpr Look kLight{false,      0xFFF4F4F5, 0xFF11181C, 0x1A111111,
-                      0x14111111, 0xFFE04E78, RGB(0xD9, 0xD2, 0xD5)};
+constexpr Look kDark{true,       0xFF18181B, 0xFFECEDEE, 0x1AFFFFFF, 0x14FFFFFF, 0xFFFF7A9E,
+                     0xFF3F3F46, 0x26FFFFFF, 0xFFC62F35, RGB(0x35, 0x2E, 0x31)};
+constexpr Look kLight{false,      0xFFF4F4F5, 0xFF11181C, 0x1A111111, 0x14111111, 0xFFE04E78,
+                      0xFFFFFFFF, 0x26111111, 0xFFDC3E42, RGB(0xD9, 0xD2, 0xD5)};
+constexpr uint32_t kDangerInk = 0xFFFFFFFF;
 
 // ---- Bloom's accent -------------------------------------------------------------------
 
@@ -379,11 +384,18 @@ D2D1_COLOR_F Color(uint32_t argb) {
 
 // Sizes in DIPs.
 constexpr float kPanelPad = 10, kGap = 6, kItemPad = 12, kRadius = 11, kRing = 2;
-constexpr float kFontSize = 12, kLineHeight = 16, kTitleGap = 8, kAllTitlesMinWidth = 140;
-constexpr float kFooterHeight = kTitleGap + kLineHeight + 4;
-// Previews: the box a thumbnail fits in is 16:10; the title with a small icon above it.
-constexpr float kPreviewPad = 6, kPreviewGap = 12, kTitleHeight = 24;
-constexpr float kTitleIcon = 16, kFallbackIcon = 48;
+// Window titles grow with "switcher.iconSize", in Bloom's type sizes (12 at medium), each
+// on a line 4/3 of its size. With every title shown a cell is as wide as about 140 DIPs
+// are at 12.
+constexpr float kFontSizes[] = {11, 12, 14, 16};
+constexpr float kTitleGap = 8, kAllTitlesWidth = 140.f / 12;
+// Previews: the box a thumbnail fits in is 16:10; the title above it after an icon as tall
+// as its line.
+constexpr float kPreviewPad = 6, kPreviewGap = 12, kFallbackIcon = 48;
+// The close button: its size by "switcher.iconSize", in a preview's title row as tall as
+// the row allows; its inset from a cell's corner; its cross.
+constexpr float kButtonSizes[] = {16, 18, 20, 22};
+constexpr float kButtonInset = 4, kButtonGrace = 2, kCrossArm = 0.4f, kCrossWidth = 1.5f;
 
 // ---- windows to list -------------------------------------------------------------------
 
@@ -433,6 +445,36 @@ struct Entry {
     com_ptr<ID2D1Bitmap> big;   // previews: in the box of a window without a thumbnail
 };
 
+// ---- the order windows were used in ------------------------------------------------------
+
+// Windows' switcher lists the window used last first. Z order mostly says the same, but a
+// window kept on top ("always on top") stays above every other one however long ago it was
+// used, so in Z order it would always be offered first. The switcher's thread therefore
+// notes each window that comes to the front (OnWindowEvent, from the time the switcher is
+// on) and lists those first, newest first; a minimized one leaves the note and so goes to
+// the back, as in Z order. Windows not seen in front since then follow in Z order.
+// Dialogs and other owned windows count as their owner. This, a few handles, is all the
+// switcher keeps while it is closed.
+std::vector<HWND> g_used;  // newest first; touched on the switcher's thread only
+constexpr size_t kUsedMax = 64;
+
+HWND RootOwner(HWND w) {
+    HWND root = GetAncestor(w, GA_ROOTOWNER);
+    return root ? root : w;
+}
+
+void CALLBACK OnWindowEvent(HWINEVENTHOOK, DWORD event, HWND w, LONG object, LONG child, DWORD,
+                            DWORD) {
+    if (!w || object != OBJID_WINDOW || child != CHILDID_SELF) return;
+    if (GetWindowThreadProcessId(w, nullptr) == GetCurrentThreadId()) return;  // the switcher
+    HWND owner = RootOwner(w);
+    std::erase(g_used, owner);
+    if (event == EVENT_SYSTEM_FOREGROUND) {
+        g_used.insert(g_used.begin(), owner);
+        if (g_used.size() > kUsedMax) g_used.pop_back();
+    }
+}
+
 std::vector<Entry> ListWindows(bool win, HWND self) {
     POINT pt{};
     GetCursorPos(&pt);
@@ -445,22 +487,36 @@ std::vector<Entry> ListWindows(bool win, HWND self) {
     struct Ctx {
         HWND self;
         HMONITOR monitor;
-        std::vector<Entry>* out;
+        std::vector<HWND>* out;
     };
-    std::vector<Entry> out;
-    Ctx ctx{self, all ? nullptr : cursor, &out};
-    // Z order: the windows used last come first, minimized ones last.
+    std::vector<HWND> windows;
+    Ctx ctx{self, all ? nullptr : cursor, &windows};
+    // In Z order, minimized ones last.
     EnumWindows(
         [](HWND w, LPARAM lp) -> BOOL {
             auto& c = *reinterpret_cast<Ctx*>(lp);
             if (!IsAltTabWindow(w, c.self)) return TRUE;
             if (c.monitor && WindowMonitor(w) != c.monitor) return TRUE;
-            wchar_t title[256];
-            int n = GetWindowTextW(w, title, ARRAYSIZE(title));
-            c.out->push_back({w, std::wstring(title, std::max(n, 0)), nullptr, nullptr});
+            c.out->push_back(w);
             return TRUE;
         },
         reinterpret_cast<LPARAM>(&ctx));
+    // Then the ones used since the switcher is on, newest first. Sorted before the titles
+    // are read, which may let window events through.
+    std::erase_if(g_used, [](HWND w) { return !IsWindow(w); });
+    auto used = [](HWND w) {
+        return std::find(g_used.begin(), g_used.end(), RootOwner(w)) - g_used.begin();
+    };
+    std::stable_sort(windows.begin(), windows.end(),
+                     [&](HWND a, HWND b) { return used(a) < used(b); });
+
+    std::vector<Entry> out;
+    out.reserve(windows.size());
+    for (HWND w : windows) {
+        wchar_t title[256];
+        int n = GetWindowTextW(w, title, ARRAYSIZE(title));
+        out.push_back({w, std::wstring(title, std::max(n, 0)), nullptr, nullptr});
+    }
     return out;
 }
 
@@ -635,6 +691,7 @@ class Switcher {
     void Commit(int index);
     void Cancel();
     void Close();
+    void CloseSelected() { CloseWindowAt(selected_); }
     bool IsOpen() const { return hwnd_ != nullptr; }
     int Cols() const { return cols_; }
 
@@ -650,6 +707,7 @@ class Switcher {
     com_ptr<ID2D1Bitmap> FromBitmap(HBITMAP bitmap);
     RECT Layout(HMONITOR monitor);
     void PlaceCells();
+    void Relayout();
     void ShowThumbnails();
     void DropThumbnails();
     void ApplyBackdrop();
@@ -658,11 +716,21 @@ class Switcher {
     void DrawIcon(ID2D1Bitmap* bitmap, D2D1_RECT_F dest);
     void DrawPreview(size_t cell, ID2D1SolidColorBrush* brush);
     D2D1_RECT_F PreviewBox(const D2D1_RECT_F& cell) const;
-    int HitTest(LPARAM lp) const;
+    int HitTest(POINT pt) const;
+    void Hover(POINT pt, bool again = false);
+    void HoverAtCursor();
+    D2D1_ELLIPSE ButtonAt(const D2D1_RECT_F& cell) const;
+    bool OnButton(int index, POINT pt) const;
+    void ShowButton();
+    void DrawButton(D2D1_POINT_2F center, float radius, bool hot);
+    void CloseWindowAt(int index);
+    void DropClosed();
 
     bool Previews() const { return options_.style == Style::previews; }
+    float TitleRow() const { return line_ + 8; }  // previews: the title's row
 
     HWND hwnd_ = nullptr;
+    HMONITOR monitor_ = nullptr;
     Options options_;
     Look look_ = kDark;
     bool glass_ = false;
@@ -671,8 +739,17 @@ class Switcher {
     bool switching_ = false;
     HWND before_ = nullptr;
 
+    // The close button on the window under the mouse: a window of its own (ShowButton), lit
+    // while the mouse is on it.
+    HWND button_ = nullptr;
+    bool buttonHot_ = false;
+    // Windows asked to close and not gone yet, and since when.
+    std::vector<HWND> closing_;
+    ULONGLONG closingSince_ = 0;
+
     // Layout in DIPs.
     float dpi_ = 96, cellW_ = 0, cellH_ = 0, footer_ = 0, width_ = 0, height_ = 0, gap_ = 0;
+    float typeSize_ = kFontSizes[1], line_ = 16;  // the titles' type and line
     int cols_ = 1, perPage_ = 1;
     std::vector<D2D1_RECT_F> cells_;  // the current page's cells
     int first_ = 0;                   // the entry in the first cell
@@ -686,6 +763,7 @@ class Switcher {
     com_ptr<ID2D1Factory> d2d_;
     com_ptr<ID2D1DCRenderTarget> target_;
     com_ptr<ID2D1DeviceContext> context_;  // the same target, for its better scaling
+    com_ptr<ID2D1StrokeStyle> round_;      // the cross's round ends
     com_ptr<IDWriteFactory> dwrite_;
     com_ptr<IDWriteTextFormat> font_;
     com_ptr<IDWriteInlineObject> ellipsis_;
@@ -700,9 +778,14 @@ enum : UINT {
     kStep,                // wParam: steps as int, lParam: 1 by rows
     kCommit,
     kCancel,
+    kClose,  // the selected window
     kStopUi,
 };
-enum : UINT_PTR { kAltTimer = 1 };
+enum : UINT_PTR { kAltTimer = 1, kCloseTimer };
+// How often a window asked to close is looked for, and how long before one that stays (a
+// program asking to save first) is left in the list.
+constexpr UINT kCloseCheckMs = 100;
+constexpr ULONGLONG kCloseWaitMs = 5000;
 constexpr wchar_t kClassName[] = L"AltTabPerMonitor.IconSwitcher";
 
 // Set by the hook thread when it takes a Tab, cleared once the switcher is done.
@@ -730,29 +813,34 @@ LRESULT Switcher::Handle(UINT msg, WPARAM wp, LPARAM lp) {
             if (wp == kAltTimer && GetAsyncKeyState(VK_MENU) >= 0) {
                 // The hook missed Alt going up (an elevated window took the keys).
                 Commit(-1);
+            } else if (wp == kCloseTimer) {
+                DropClosed();
             }
             return 0;
         case WM_ACTIVATE:
             if (LOWORD(wp) == WA_INACTIVE && !switching_) Close();
             return 0;
-        case WM_MOUSEMOVE: {
-            int hit = HitTest(lp);
-            if (hit != hover_) {
-                hover_ = hit;
-                TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, hwnd_, 0};
-                TrackMouseEvent(&track);
-                InvalidateRect(hwnd_, nullptr, FALSE);
+        case WM_MOUSEMOVE:
+            Hover({GET_X_LPARAM(lp), GET_Y_LPARAM(lp)});
+            return 0;
+        case WM_MOUSELEAVE:
+            Hover({-1, -1});
+            return 0;
+        case WM_LBUTTONUP: {
+            POINT pt{GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+            if (int hit = HitTest(pt); hit >= 0) {
+                if (OnButton(hit, pt)) {
+                    CloseWindowAt(hit);
+                } else {
+                    Commit(hit);
+                }
             }
             return 0;
         }
-        case WM_MOUSELEAVE:
-            if (hover_ != -1) {
-                hover_ = -1;
-                InvalidateRect(hwnd_, nullptr, FALSE);
+        case WM_RBUTTONUP:  // closes the window clicked, with no menu
+            if (int hit = HitTest({GET_X_LPARAM(lp), GET_Y_LPARAM(lp)}); hit >= 0) {
+                CloseWindowAt(hit);
             }
-            return 0;
-        case WM_LBUTTONUP:
-            if (int hit = HitTest(lp); hit >= 0) Commit(hit);
             return 0;
         case WM_SYSCOMMAND:
             if ((wp & 0xFFF0) == SC_KEYMENU) return 0;  // Alt going up
@@ -770,11 +858,14 @@ bool Switcher::Make() {
         D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), dpi_, dpi_);
     if (FAILED(d2d_->CreateDCRenderTarget(&props, target_.put()))) return false;
     context_ = target_.try_as<ID2D1DeviceContext>();
+    d2d_->CreateStrokeStyle(
+        D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND), nullptr, 0,
+        round_.put());
     if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
                                    reinterpret_cast<IUnknown**>(dwrite_.put()))) ||
         FAILED(dwrite_->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
                                          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-                                         kFontSize, L"", font_.put())) ||
+                                         typeSize_, L"", font_.put())) ||
         FAILED(dwrite_->CreateEllipsisTrimmingSign(font_.get(), ellipsis_.put()))) {
         return false;
     }
@@ -793,6 +884,7 @@ void Switcher::Free() {
     DropThumbnails();
     for (auto& e : entries_) e.icon = e.big = nullptr;
     icons_.clear();
+    round_ = nullptr;
     context_ = nullptr;
     target_ = nullptr;
     d2d_ = nullptr;
@@ -912,6 +1004,8 @@ RECT Switcher::Layout(HMONITOR monitor) {
     const RECT& work = info.rcWork;
     float scale = dpi_ / 96;
     float workW = (work.right - work.left) / scale, workH = (work.bottom - work.top) / scale;
+    typeSize_ = kFontSizes[options_.size];
+    line_ = std::ceil(typeSize_ * 4 / 3);
 
     if (Previews()) {
         // A box per window with its title plate above, every title in the same row
@@ -919,7 +1013,7 @@ RECT Switcher::Layout(HMONITOR monitor) {
         float box = static_cast<float>(kPreviewHeights[options_.size]);
         cellW_ = std::round(box * 1.6f) + 2 * kPreviewPad;
         cellH_ = box + 2 * kPreviewPad;
-        if (options_.titles != Titles::none) cellH_ += kTitleHeight + kPreviewPad;
+        if (options_.titles != Titles::none) cellH_ += TitleRow() + kPreviewPad;
         footer_ = 0;
         gap_ = kPreviewGap;
     } else {
@@ -927,10 +1021,10 @@ RECT Switcher::Layout(HMONITOR monitor) {
         cellW_ = icon + 2 * kItemPad;
         cellH_ = icon + 2 * kItemPad;
         if (options_.titles == Titles::all) {
-            cellW_ = std::max(cellW_, kAllTitlesMinWidth);
-            cellH_ += kTitleGap + kLineHeight;
+            cellW_ = std::max(cellW_, std::round(kAllTitlesWidth * typeSize_));
+            cellH_ += kTitleGap + line_;
         }
-        footer_ = options_.titles == Titles::selected ? kFooterHeight : 0;
+        footer_ = options_.titles == Titles::selected ? kTitleGap + line_ + 4 : 0;
         gap_ = kGap;
     }
 
@@ -970,8 +1064,19 @@ void Switcher::PlaceCells() {
 // The box a cell's thumbnail fits in, under its title.
 D2D1_RECT_F Switcher::PreviewBox(const D2D1_RECT_F& cell) const {
     float top = cell.top + kPreviewPad;
-    if (options_.titles != Titles::none) top += kTitleHeight + kPreviewPad;
+    if (options_.titles != Titles::none) top += TitleRow() + kPreviewPad;
     return {cell.left + kPreviewPad, top, cell.right - kPreviewPad, cell.bottom - kPreviewPad};
+}
+
+// The panel again for the windows left after some closed, on the same monitor.
+void Switcher::Relayout() {
+    RECT r = Layout(monitor_);
+    PlaceCells();
+    SetWindowPos(hwnd_, nullptr, r.left, r.top, r.right - r.left, r.bottom - r.top,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    ShowThumbnails();
+    HoverAtCursor();
+    InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
 // Previews: asks DWM to draw each cell's window, fitted in its box and never enlarged.
@@ -1086,13 +1191,18 @@ void Switcher::DrawPreview(size_t i, ID2D1SolidColorBrush* brush) {
                  (options_.titles == Titles::selected && index == selected_);
     if (!title) return;
     float top = cell.top + kPreviewPad;
-    D2D1_RECT_F bar{box.left, top, box.right, top + kTitleHeight};
-    if (!e.icon) e.icon = IconFor(e.hwnd, kTitleIcon);
-    float iconTop = (bar.top + bar.bottom - kTitleIcon) / 2;
-    DrawIcon(e.icon.get(),
-             {bar.left + 4, iconTop, bar.left + 4 + kTitleIcon, iconTop + kTitleIcon});
+    D2D1_RECT_F bar{box.left, top, box.right, top + TitleRow()};
+    if (!e.icon) e.icon = IconFor(e.hwnd, line_);
+    float iconTop = (bar.top + bar.bottom - line_) / 2;
+    DrawIcon(e.icon.get(), {bar.left + 4, iconTop, bar.left + 4 + line_, iconTop + line_});
     brush->SetColor(Color(look_.text));
-    D2D1_RECT_F line{bar.left + 4 + kTitleIcon + 6, bar.top, bar.right - 4, bar.bottom};
+    // Under the mouse the row's right end holds the close button.
+    float right = bar.right - 4;
+    if (index == hover_) {
+        D2D1_ELLIPSE b = ButtonAt(cell);
+        right = b.point.x - b.radiusX - 6;
+    }
+    D2D1_RECT_F line{bar.left + 4 + line_ + 6, bar.top, right, bar.bottom};
     target_->DrawText(e.title.c_str(), static_cast<UINT32>(e.title.size()), font_.get(), &line,
                       brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
 }
@@ -1145,16 +1255,16 @@ void Switcher::Draw() {
         if (options_.titles == Titles::all) {
             brush->SetColor(Color(look_.text));
             float y = top + icon + kTitleGap;
-            D2D1_RECT_F line{cell.left + 6, y, cell.right - 6, y + kLineHeight};
+            D2D1_RECT_F line{cell.left + 6, y, cell.right - 6, y + line_};
             target_->DrawText(e.title.c_str(), static_cast<UINT32>(e.title.size()), font_.get(),
                               &line, brush.get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
         }
     }
     if (!Previews() && options_.titles == Titles::selected) {
         const auto& title = entries_[selected_].title;
-        float y = height_ - kPanelPad - kLineHeight - 2;
+        float y = height_ - kPanelPad - line_ - 2;
         brush->SetColor(Color(look_.text));
-        D2D1_RECT_F line{kPanelPad + 8, y, width_ - kPanelPad - 8, y + kLineHeight};
+        D2D1_RECT_F line{kPanelPad + 8, y, width_ - kPanelPad - 8, y + line_};
         target_->DrawText(title.c_str(), static_cast<UINT32>(title.size()), font_.get(), &line,
                           brush.get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
     }
@@ -1172,6 +1282,7 @@ bool Switcher::Open() {
     look_.accent = look_.dark ? accent.dark : accent.light;
     HMONITOR monitor = GetAltTabTargetMonitor();
     if (!monitor) monitor = MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
+    monitor_ = monitor;
     RECT r = Layout(monitor);
     PlaceCells();
     if (!Make()) return false;
@@ -1239,6 +1350,7 @@ void Switcher::Step(int delta) {
     if (selected_ < first_ || selected_ >= first_ + static_cast<int>(cells_.size())) {
         PlaceCells();
         ShowThumbnails();  // the new page's windows
+        HoverAtCursor();
     }
     InvalidateRect(hwnd_, nullptr, FALSE);
 }
@@ -1262,19 +1374,25 @@ void Switcher::Close() {
     DropThumbnails();
     if (HWND w = hwnd_) {
         hwnd_ = nullptr;  // the window's last messages go to DefWindowProc
-        DestroyWindow(w);  // its timers go with it
+        DestroyWindow(w);  // its timers and the close button's window go with it
     }
+    button_ = nullptr;
+    buttonHot_ = false;
+    hover_ = -1;
+    std::vector<HWND>().swap(closing_);
     Free();
     std::vector<Entry>().swap(entries_);
     std::vector<D2D1_RECT_F>().swap(cells_);
+    monitor_ = nullptr;
     before_ = nullptr;
     switching_ = false;
     g_active = false;
 }
 
-int Switcher::HitTest(LPARAM lp) const {
+// pt in client pixels.
+int Switcher::HitTest(POINT pt) const {
     float scale = dpi_ / 96;
-    float x = GET_X_LPARAM(lp) / scale, y = GET_Y_LPARAM(lp) / scale;
+    float x = pt.x / scale, y = pt.y / scale;
     for (size_t i = 0; i < cells_.size(); i++) {
         const auto& c = cells_[i];
         if (x >= c.left && x < c.right && y >= c.top && y < c.bottom) {
@@ -1282,6 +1400,178 @@ int Switcher::HitTest(LPARAM lp) const {
         }
     }
     return -1;
+}
+
+// ---- closing windows -------------------------------------------------------------------
+
+// The window under the mouse (pt in client pixels, off the panel for none): its cell lit
+// and its close button out, the button lit while the mouse is on it. again: the cells
+// moved, so the button goes where they are now.
+void Switcher::Hover(POINT pt, bool again) {
+    int hit = HitTest(pt);
+    bool hot = hit >= 0 && OnButton(hit, pt);
+    if (hit != hover_) {
+        hover_ = hit;
+        if (hit >= 0) {
+            TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, hwnd_, 0};
+            TrackMouseEvent(&track);
+        }
+        InvalidateRect(hwnd_, nullptr, FALSE);
+        again = true;
+    }
+    if (again || hot != buttonHot_) {
+        buttonHot_ = hot;
+        ShowButton();
+    }
+}
+
+// After the cells moved under a mouse that may not move.
+void Switcher::HoverAtCursor() {
+    POINT pt{};
+    RECT client{};
+    GetCursorPos(&pt);
+    ScreenToClient(hwnd_, &pt);
+    GetClientRect(hwnd_, &client);
+    if (!PtInRect(&client, pt)) pt = {-1, -1};
+    Hover(pt, true);
+}
+
+// A cell's close button, in DIPs: at the right end of a preview's title row, else in the
+// cell's top right corner, over a preview's thumbnail where it has no title row.
+D2D1_ELLIPSE Switcher::ButtonAt(const D2D1_RECT_F& cell) const {
+    if (Previews() && options_.titles != Titles::none) {
+        float r = (TitleRow() - 4) / 2;
+        return {{cell.right - kPreviewPad - r, cell.top + kPreviewPad + TitleRow() / 2}, r, r};
+    }
+    float r = kButtonSizes[options_.size] / 2;
+    float in = (Previews() ? kPreviewPad : 0) + kButtonInset;
+    return {{cell.right - in - r, cell.top + in + r}, r, r};
+}
+
+// pt in client pixels; the button takes a little more than it shows.
+bool Switcher::OnButton(int index, POINT pt) const {
+    int i = index - first_;
+    if (i < 0 || i >= static_cast<int>(cells_.size())) return false;
+    D2D1_ELLIPSE b = ButtonAt(cells_[i]);
+    float scale = dpi_ / 96, r = b.radiusX + kButtonGrace;
+    float dx = pt.x / scale - b.point.x, dy = pt.y / scale - b.point.y;
+    return dx * dx + dy * dy <= r * r;
+}
+
+// A round button with a cross: Bloom's button color and edge, red with a white cross while
+// the mouse is on it, as for anything that cannot be undone.
+void Switcher::DrawButton(D2D1_POINT_2F center, float radius, bool hot) {
+    com_ptr<ID2D1SolidColorBrush> brush;
+    target_->CreateSolidColorBrush(Color(hot ? look_.danger : look_.button), brush.put());
+    if (!brush) return;
+    target_->FillEllipse({center, radius, radius}, brush.get());
+    if (!hot) {
+        brush->SetColor(Color(look_.edge));
+        target_->DrawEllipse({center, radius - 0.5f, radius - 0.5f}, brush.get(), 1.f);
+    }
+    brush->SetColor(Color(hot ? kDangerInk : look_.text));
+    float a = radius * kCrossArm;
+    target_->DrawLine({center.x - a, center.y - a}, {center.x + a, center.y + a}, brush.get(),
+                      kCrossWidth, round_.get());
+    target_->DrawLine({center.x - a, center.y + a}, {center.x + a, center.y - a}, brush.get(),
+                      kCrossWidth, round_.get());
+}
+
+// The close button sits in a small window of its own above the switcher's: DWM draws the
+// window previews over the switcher's own pixels, and the button has to show above them.
+// The mouse goes through it to the switcher, which knows where the button is (OnButton).
+// It is made on the first hover and goes with the switcher's window.
+void Switcher::ShowButton() {
+    int i = hover_ - first_;
+    if (hover_ < 0 || i < 0 || i >= static_cast<int>(cells_.size()) || !target_) {
+        if (button_) ShowWindow(button_, SW_HIDE);
+        return;
+    }
+    D2D1_ELLIPSE b = ButtonAt(cells_[i]);
+    float scale = dpi_ / 96;
+    // The button's square in pixels, with a pixel to spare all round for its smoothed edge.
+    int x = static_cast<int>(std::floor((b.point.x - b.radiusX) * scale)) - 1;
+    int y = static_cast<int>(std::floor((b.point.y - b.radiusY) * scale)) - 1;
+    int size = static_cast<int>(std::ceil(2 * b.radiusX * scale)) + 3;
+    if (!button_) {
+        button_ = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW |
+                                      WS_EX_NOACTIVATE | WS_EX_TOPMOST,
+                                  kClassName, L"", WS_POPUP, 0, 0, 0, 0, hwnd_, nullptr,
+                                  reinterpret_cast<HINSTANCE>(&__ImageBase), nullptr);
+        if (!button_) return;
+    }
+    BITMAPINFO bi{};
+    bi.bmiHeader = {sizeof(bi.bmiHeader), size, -size, 1, 32, BI_RGB};
+    void* bits = nullptr;
+    HDC screen = GetDC(nullptr);
+    HDC dc = CreateCompatibleDC(screen);
+    if (HBITMAP dib = CreateDIBSection(dc, &bi, DIB_RGB_COLORS, &bits, nullptr, 0)) {
+        HGDIOBJ old = SelectObject(dc, dib);
+        RECT rc{0, 0, size, size};
+        if (SUCCEEDED(target_->BindDC(dc, &rc))) {
+            target_->BeginDraw();
+            target_->Clear(Color(0));
+            DrawButton({b.point.x - x / scale, b.point.y - y / scale}, b.radiusX, buttonHot_);
+            target_->EndDraw();
+            GdiFlush();
+            POINT at{x, y}, from{};
+            ClientToScreen(hwnd_, &at);
+            SIZE extent{size, size};
+            BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+            UpdateLayeredWindow(button_, screen, &at, &extent, dc, &from, 0, &blend, ULW_ALPHA);
+            SetWindowPos(button_, HWND_TOPMOST, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        }
+        SelectObject(dc, old);
+        DeleteObject(dib);
+    }
+    DeleteDC(dc);
+    ReleaseDC(nullptr, screen);
+}
+
+// Asks a window to close as the taskbar's "Close window" does, so a program with unsaved
+// work can ask first; nothing is ended by force. An elevated window does not take the
+// message from Explorer. The window leaves the panel once it is gone (DropClosed).
+void Switcher::CloseWindowAt(int index) {
+    if (index < 0 || index >= static_cast<int>(entries_.size())) return;
+    HWND w = entries_[index].hwnd;
+    if (!PostMessageW(w, WM_SYSCOMMAND, SC_CLOSE, 0)) return;
+    if (std::find(closing_.begin(), closing_.end(), w) == closing_.end()) closing_.push_back(w);
+    closingSince_ = GetTickCount64();
+    SetTimer(hwnd_, kCloseTimer, kCloseCheckMs, nullptr);
+}
+
+// Takes the windows that closed (or hid, as programs that stay in the tray do) off the
+// panel and lays it out again for the rest; with none left the switcher closes.
+void Switcher::DropClosed() {
+    bool dropped = false;
+    std::erase_if(closing_, [&](HWND w) {
+        DWORD cloaked = 0;
+        if (IsWindow(w) && IsWindowVisible(w) &&
+            !(SUCCEEDED(DwmGetWindowAttribute(w, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))) &&
+              cloaked)) {
+            return false;
+        }
+        auto it = std::find_if(entries_.begin(), entries_.end(),
+                               [&](const Entry& e) { return e.hwnd == w; });
+        if (it != entries_.end()) {
+            if (it - entries_.begin() < selected_) selected_--;
+            entries_.erase(it);
+            dropped = true;
+        }
+        return true;
+    });
+    if (closing_.empty() || GetTickCount64() - closingSince_ > kCloseWaitMs) {
+        closing_.clear();
+        KillTimer(hwnd_, kCloseTimer);
+    }
+    if (!dropped) return;
+    if (entries_.empty()) {
+        Cancel();
+        return;
+    }
+    selected_ = std::min(selected_, static_cast<int>(entries_.size()) - 1);
+    Relayout();
 }
 
 // ---- threads ---------------------------------------------------------------------------
@@ -1323,6 +1613,9 @@ bool OnKey(WPARAM msg, const KBDLLHOOKSTRUCT& k) {
             return false;  // Alt itself goes through
         case VK_ESCAPE:
             if (down) Post(kCancel);
+            return true;
+        case VK_DELETE:  // closes the chosen window, as in Windows' switcher
+            if (down) Post(kClose);
             return true;
         case VK_RETURN:
         case VK_SPACE:
@@ -1366,6 +1659,16 @@ DWORD WINAPI UiThread(void*) {
     HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     BufferedPaintInit();
     Switcher switcher;
+    // The order windows are used in (g_used), from the one in front now. The events come
+    // as messages to this thread.
+    g_used.clear();
+    if (HWND front = GetForegroundWindow()) g_used.push_back(RootOwner(front));
+    HWINEVENTHOOK events[] = {
+        SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr, OnWindowEvent,
+                        0, 0, WINEVENT_OUTOFCONTEXT),
+        SetWinEventHook(EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZESTART, nullptr,
+                        OnWindowEvent, 0, 0, WINEVENT_OUTOFCONTEXT),
+    };
     MSG msg;
     PeekMessageW(&msg, nullptr, 0, 0, PM_NOREMOVE);  // the queue the hook posts to
     SetEvent(g_ready);
@@ -1391,8 +1694,15 @@ DWORD WINAPI UiThread(void*) {
             case kCancel:
                 if (switcher.IsOpen()) switcher.Cancel();
                 break;
+            case kClose:
+                if (switcher.IsOpen()) switcher.CloseSelected();
+                break;
         }
     }
+    for (HWINEVENTHOOK h : events) {
+        if (h) UnhookWinEvent(h);
+    }
+    std::vector<HWND>().swap(g_used);
     switcher.Close();
     UnregisterClassW(kClassName, reinterpret_cast<HINSTANCE>(&__ImageBase));
     BufferedPaintUnInit();
