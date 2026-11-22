@@ -514,7 +514,10 @@ std::vector<Entry> ListWindows(bool win, HWND self) {
     out.reserve(windows.size());
     for (HWND w : windows) {
         wchar_t title[256];
-        int n = GetWindowTextW(w, title, ARRAYSIZE(title));
+        // Read from the window itself, never by asking: for a window of Explorer's own (a
+        // folder window) GetWindowText sends WM_GETTEXT with no timeout, and one stuck on
+        // a stalled network share would hold up the switcher.
+        int n = InternalGetWindowText(w, title, ARRAYSIZE(title));
         out.push_back({w, std::wstring(title, std::max(n, 0)), nullptr, nullptr});
     }
     return out;
@@ -703,6 +706,7 @@ class Switcher {
     bool Make();
     void Free();
     com_ptr<ID2D1Bitmap> IconFor(HWND w, float dips);
+    void LoadIcons();
     com_ptr<ID2D1Bitmap> FromIcon(HICON icon);
     com_ptr<ID2D1Bitmap> FromBitmap(HBITMAP bitmap);
     RECT Layout(HMONITOR monitor);
@@ -894,11 +898,13 @@ void Switcher::Free() {
     wic_ = nullptr;
 }
 
+// Both check that the panel is still there: a shell call before them (IconFor) may have
+// let a message close it, which frees the factories.
 com_ptr<ID2D1Bitmap> Switcher::FromIcon(HICON icon) {
     com_ptr<IWICBitmap> source;
     com_ptr<IWICFormatConverter> converter;
     com_ptr<ID2D1Bitmap> bitmap;
-    if (icon && SUCCEEDED(wic_->CreateBitmapFromHICON(icon, source.put())) &&
+    if (icon && wic_ && target_ && SUCCEEDED(wic_->CreateBitmapFromHICON(icon, source.put())) &&
         SUCCEEDED(wic_->CreateFormatConverter(converter.put())) &&
         SUCCEEDED(converter->Initialize(source.get(), GUID_WICPixelFormat32bppPBGRA,
                                         WICBitmapDitherTypeNone, nullptr, 0,
@@ -912,7 +918,8 @@ com_ptr<ID2D1Bitmap> Switcher::FromBitmap(HBITMAP hbitmap) {
     com_ptr<IWICBitmap> source;
     com_ptr<IWICFormatConverter> converter;
     com_ptr<ID2D1Bitmap> bitmap;
-    if (SUCCEEDED(wic_->CreateBitmapFromHBITMAP(hbitmap, nullptr, WICBitmapUsePremultipliedAlpha,
+    if (wic_ && target_ &&
+        SUCCEEDED(wic_->CreateBitmapFromHBITMAP(hbitmap, nullptr, WICBitmapUsePremultipliedAlpha,
                                                 source.put())) &&
         SUCCEEDED(wic_->CreateFormatConverter(converter.put())) &&
         SUCCEEDED(converter->Initialize(source.get(), GUID_WICPixelFormat32bppPBGRA,
@@ -1145,8 +1152,54 @@ void Switcher::ApplyBackdrop() {
     glass_ = options_.glass && PersonalizeValue(L"EnableTransparency", 1) != 0;
 }
 
+// The icons the page shown draws, loaded before any drawing starts. The shell calls in
+// IconFor can run a modal loop that hands this thread's window messages on (a timer, a
+// click), which may close the panel or lay it out again; each entry is looked up afresh
+// after its call, and the loading stops once the panel is gone.
+void Switcher::LoadIcons() {
+    float size = static_cast<float>(kIconSizes[options_.size]);
+    auto load = [&](size_t index, com_ptr<ID2D1Bitmap> Entry::*slot, float dips) {
+        if (!hwnd_ || index >= entries_.size() || entries_[index].*slot) return;
+        HWND w = entries_[index].hwnd;
+        com_ptr<ID2D1Bitmap> bitmap = IconFor(w, dips);
+        if (hwnd_ && index < entries_.size() && entries_[index].hwnd == w) {
+            entries_[index].*slot = std::move(bitmap);
+        }
+    };
+    for (size_t i = 0; hwnd_ && i < cells_.size(); i++) {
+        size_t index = first_ + i;
+        if (!Previews()) {
+            load(index, &Entry::icon, size);
+            continue;
+        }
+        // As DrawPreview draws them.
+        if (i >= thumbnails_.size() || !thumbnails_[i].id) {
+            load(index, &Entry::big, kFallbackIcon);
+        }
+        if (options_.titles == Titles::all ||
+            (options_.titles == Titles::selected && static_cast<int>(index) == selected_)) {
+            load(index, &Entry::icon, line_);
+        }
+    }
+}
+
 // Draws through a buffered paint, which keeps the alpha the see-through window needs.
 void Switcher::Paint() {
+    // Draw only reads the icons loaded here. A layout change while they load asks for its
+    // own paint, but this one draws the new page too, so its icons are loaded until the
+    // page stays put; once the panel has closed there is nothing left to draw.
+    HWND hwnd = hwnd_;
+    for (;;) {
+        const Entry* entries = entries_.data();
+        size_t count = entries_.size(), cells = cells_.size();
+        int first = first_;
+        LoadIcons();
+        if (hwnd_ != hwnd || !target_) return;
+        if (entries_.data() == entries && entries_.size() == count &&
+            cells_.size() == cells && first_ == first) {
+            break;
+        }
+    }
     PAINTSTRUCT ps;
     HDC hdc = BeginPaint(hwnd_, &ps);
     RECT rc;
@@ -1182,7 +1235,6 @@ void Switcher::DrawPreview(size_t i, ID2D1SolidColorBrush* brush) {
             brush->SetColor(Color(look_.hover));
             target_->FillGeometry(shape.get(), brush);
         }
-        if (!e.big) e.big = IconFor(e.hwnd, kFallbackIcon);
         float x = (box.left + box.right - kFallbackIcon) / 2;
         float y = (box.top + box.bottom - kFallbackIcon) / 2;
         DrawIcon(e.big.get(), {x, y, x + kFallbackIcon, y + kFallbackIcon});
@@ -1192,7 +1244,6 @@ void Switcher::DrawPreview(size_t i, ID2D1SolidColorBrush* brush) {
     if (!title) return;
     float top = cell.top + kPreviewPad;
     D2D1_RECT_F bar{box.left, top, box.right, top + TitleRow()};
-    if (!e.icon) e.icon = IconFor(e.hwnd, line_);
     float iconTop = (bar.top + bar.bottom - line_) / 2;
     DrawIcon(e.icon.get(), {bar.left + 4, iconTop, bar.left + 4 + line_, iconTop + line_});
     brush->SetColor(Color(look_.text));
@@ -1207,6 +1258,7 @@ void Switcher::DrawPreview(size_t i, ID2D1SolidColorBrush* brush) {
                       brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
 }
 
+// Reads only icons already loaded (LoadIcons): nothing in here may let a message in.
 void Switcher::Draw() {
     target_->BeginDraw();
     target_->Clear(Color(0));
@@ -1249,7 +1301,6 @@ void Switcher::Draw() {
             DrawPreview(i, brush.get());
             continue;
         }
-        if (!e.icon) e.icon = IconFor(e.hwnd, icon);
         float left = (cell.left + cell.right - icon) / 2, top = cell.top + kItemPad;
         DrawIcon(e.icon.get(), {left, top, left + icon, top + icon});
         if (options_.titles == Titles::all) {
@@ -1310,7 +1361,8 @@ bool Switcher::Open() {
     if (!thumbnails_.empty()) DwmFlush();
     cloak = FALSE;
     DwmSetWindowAttribute(hwnd_, DWMWA_CLOAK, &cloak, sizeof(cloak));
-    return true;
+    // A click let in while the first frame's icons loaded may have closed it already.
+    return hwnd_ != nullptr;
 }
 
 void Switcher::Start(bool back, bool win) {
@@ -1583,8 +1635,9 @@ HANDLE g_uiThread, g_hookThread;
 DWORD g_uiThreadId, g_hookThreadId;
 HANDLE g_ready;
 
-void Post(UINT msg, WPARAM wp = 0, LPARAM lp = 0) {
-    if (DWORD id = g_uiThreadId) PostThreadMessageW(id, msg, wp, lp);
+bool Post(UINT msg, WPARAM wp = 0, LPARAM lp = 0) {
+    DWORD id = g_uiThreadId;
+    return id && PostThreadMessageW(id, msg, wp, lp);
 }
 
 bool Down(int vk) {
@@ -1598,7 +1651,11 @@ bool OnKey(WPARAM msg, const KBDLLHOOKSTRUCT& k) {
         if (!g_active) {
             if (!Down(VK_MENU) || Down(VK_CONTROL) || !g_uiThreadId) return false;
             g_active = true;
-            Post(kStart, Down(VK_SHIFT), Down(VK_LWIN) || Down(VK_RWIN));
+            // A full queue: Windows' own switcher gets the Tab instead.
+            if (!Post(kStart, Down(VK_SHIFT), Down(VK_LWIN) || Down(VK_RWIN))) {
+                g_active = false;
+                return false;
+            }
             return true;
         }
         Post(kStep, static_cast<WPARAM>(Down(VK_SHIFT) ? -1 : 1));
@@ -1611,6 +1668,11 @@ bool OnKey(WPARAM msg, const KBDLLHOOKSTRUCT& k) {
         case VK_RMENU:
             if (!down) Post(kCommit);
             return false;  // Alt itself goes through
+    }
+    // With Alt up the switcher is on its way out (the Commit above, or its Alt timer); if
+    // its thread is held up meanwhile, the keys still reach the program in front.
+    if (!Down(VK_MENU)) return false;
+    switch (k.vkCode) {
         case VK_ESCAPE:
             if (down) Post(kCancel);
             return true;
@@ -1759,6 +1821,16 @@ void Apply() {
 }  // namespace sw
 
 BOOL Wh_ModInit() {
+    // The runtime may also be put into other shell processes (ShellHost.exe) and loads the
+    // mod there too; the switcher and its keyboard hook belong to explorer alone, so
+    // anywhere else the mod declines to load before hooking anything.
+    wchar_t path[MAX_PATH];
+    DWORD n = GetModuleFileNameW(nullptr, path, MAX_PATH);
+    const wchar_t* name = n > 0 && n < MAX_PATH ? wcsrchr(path, L'\\') : nullptr;
+    if (!name || _wcsicmp(name + 1, L"explorer.exe") != 0) {
+        Wh_Log(L"not explorer: the switcher stays off here");
+        return FALSE;
+    }
     if (!AltTabPerMonitor_ModInit()) return FALSE;
     sw::Apply();
     return TRUE;
