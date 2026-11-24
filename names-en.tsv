@@ -1,40 +1,40 @@
 group:switcher	Switcher
-switcher.style	Look
-switcher.style#about	The add-on draws the window previews and the icon switcher itself, on a panel in Bloom's look. While an elevated window is in front, Windows' switcher appears
-switcher.style=windows	Windows' switcher
+switcher.style	Display style
+switcher.style#about	Window previews and icon switcher are drawn on a Bloom-styled panel by this add-on. The default Windows switcher appears when an administrator window is in front
+switcher.style=windows	Windows switcher
 switcher.style=previews	Window previews
 switcher.style=icons	Icon switcher
 switcher.iconSize	Size
-switcher.iconSize#about	In the window previews and the icon switcher
+switcher.iconSize#about	In window previews and icon switcher
 switcher.iconSize=small	Small
-switcher.iconSize=medium	Medium
+switcher.iconSize=medium	Normal
 switcher.iconSize=large	Large
-switcher.iconSize=huge	Huge
+switcher.iconSize=huge	Extra large
 switcher.titles	Window titles
-switcher.titles#about	In the window previews and the icon switcher
+switcher.titles#about	In window previews and icon switcher
 switcher.titles=none	Hidden
-switcher.titles=selected	The chosen window's only
+switcher.titles=selected	Selected window only
 switcher.titles=all	All
 group:monitor	Monitor
-monitor.altTabLocation	Alt+Tab: monitor it appears on
-monitor.altTabLocation=cursor	The monitor under the cursor
-monitor.altTabLocation=primary	The primary monitor
-monitor.altTabWindows	Alt+Tab: windows to show
-monitor.altTabWindows=cursorMonitor	The windows on the cursor's monitor
-monitor.altTabWindows=allMonitors	The windows on every monitor
-monitor.altTabWindows=cursorMonitorExceptPrimary	The windows on the cursor's monitor, every window on the primary one
-monitor.winAltTabLocation	Win+Alt+Tab: monitor it appears on
-monitor.winAltTabLocation=cursor	The monitor under the cursor
-monitor.winAltTabLocation=primary	The primary monitor
-monitor.winAltTabWindows	Win+Alt+Tab: windows to show
-monitor.winAltTabWindows=cursorMonitor	The windows on the cursor's monitor
-monitor.winAltTabWindows=allMonitors	The windows on every monitor
-monitor.winAltTabWindows=cursorMonitorExceptPrimary	The windows on the cursor's monitor, every window on the primary one
-group:pill	Look
+monitor.altTabLocation	Alt+Tab: Display on monitor
+monitor.altTabLocation=cursor	Monitor with cursor
+monitor.altTabLocation=primary	Primary monitor
+monitor.altTabWindows	Alt+Tab: Windows to show
+monitor.altTabWindows=cursorMonitor	Windows on monitor with cursor
+monitor.altTabWindows=allMonitors	Windows on all monitors
+monitor.altTabWindows=cursorMonitorExceptPrimary	Windows on monitor with cursor, or all windows on primary monitor
+monitor.winAltTabLocation	Win+Alt+Tab: Display on monitor
+monitor.winAltTabLocation=cursor	Monitor with cursor
+monitor.winAltTabLocation=primary	Primary monitor
+monitor.winAltTabWindows	Win+Alt+Tab: Windows to show
+monitor.winAltTabWindows=cursorMonitor	Windows on monitor with cursor
+monitor.winAltTabWindows=allMonitors	Windows on all monitors
+monitor.winAltTabWindows=cursorMonitorExceptPrimary	Windows on monitor with cursor, or all windows on primary monitor
+group:pill	Appearance
 pill.theme	Theme
-pill.theme#about	Light or dark for the window previews and the icon switcher. As a Bloom add-on it follows Bloom's theme
-pill.theme=system	Windows' app theme
+pill.theme#about	Light or dark theme for window previews and icon switcher. When used as a Bloom add-on, it follows Bloom's theme
+pill.theme=system	Windows app theme
 pill.theme=dark	Dark
 pill.theme=light	Light
 pill.glass	Glass effect
-pill.glass#about	When on, a little of what is behind shows through the switcher's panel; when off, the panel is filled in the theme's color. As a Bloom add-on it follows Bloom's glass effect
+pill.glass#about	When enabled, the switcher panel is slightly translucent; when disabled, it uses a solid theme color. When used as a Bloom add-on, it follows Bloom's glass effect
